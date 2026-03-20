@@ -4,544 +4,229 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>New World — Territory Map</title>
-
-  <!-- MapLibre GL JS -->
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css">
-  <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
-
-  <!-- Google Fonts — fantasy feel -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=MedievalSharp&family=Cinzel:wght@400;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1510; color: #d4c8a8; overflow: hidden; height: 100vh; width: 100vw; }
+    #map { position: absolute; inset: 0; width: 100%; height: 100%; }
 
-    body {
-      font-family: 'Inter', sans-serif;
-      background: #1a1510;
-      color: #d4c8a8;
-      overflow: hidden;
-      height: 100vh;
-      width: 100vw;
-    }
-
-    #map {
-      position: absolute;
-      inset: 0;
-      width: 100%;
-      height: 100%;
-    }
-
-    /* ───────── Title Overlay ───────── */
     .title-overlay {
-      position: absolute;
-      top: 16px;
-      left: 16px;
-      z-index: 10;
-      pointer-events: none;
+      position: absolute; top: 16px; left: 16px; z-index: 10; pointer-events: none;
     }
-
     .title-overlay h1 {
-      font-family: 'Cinzel', serif;
-      font-size: clamp(18px, 3vw, 28px);
-      color: #e8d5b0;
-      text-shadow: 0 0 20px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.6);
+      font-family: 'Cinzel', serif; font-size: clamp(16px, 3vw, 26px);
+      color: #e8d5b0; text-shadow: 0 0 20px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.7);
       letter-spacing: 2px;
     }
 
-    .title-overlay .subtitle {
-      font-family: 'MedievalSharp', cursive;
-      font-size: clamp(11px, 1.5vw, 14px);
-      color: #9a8c6e;
-      margin-top: 2px;
-      letter-spacing: 1px;
-    }
-
-    /* ───────── Controls ───────── */
     .controls {
-      position: absolute;
-      top: 16px;
-      right: 16px;
-      z-index: 10;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
+      position: absolute; top: 16px; right: 16px; z-index: 10;
+      display: flex; flex-direction: column; gap: 8px;
     }
+    .controls button {
+      font-family: 'Cinzel', serif; font-size: 13px;
+      background: rgba(26,21,16,0.92); color: #d4c8a8;
+      border: 1px solid #3a3528; border-radius: 6px;
+      padding: 8px 14px; cursor: pointer; transition: all 0.2s;
+    }
+    .controls button:hover { background: rgba(50,40,28,0.95); border-color: #6a5f3e; }
+    .controls button.active { background: rgba(80,60,20,0.9); border-color: #b09040; color: #f0e0a0; }
 
-    .controls button { font-family: 'Cinzel', serif; font-size: 13px; background: rgba(26, 21, 16, 0.9); color: #d4c8a8; border: 1px solid #3a3528; border-radius: 6px; padding: 8px 14px; cursor: pointer; transition: all 0.2s; white-space: nowrap; }
-    .controls button:hover { background: rgba(50, 40, 28, 0.95); border-color: #6a5f3e; }
-    .controls button.active { background: rgba(80, 60, 20, 0.9); border-color: #b09040; color: #f0e0a0; }
-
-    /* ───────── Zoom Indicator ───────── */
     .zoom-indicator {
-      position: absolute;
-      bottom: 32px;
-      right: 16px;
-      z-index: 10;
-      background: rgba(26, 21, 16, 0.9);
-      border: 1px solid #3a3528;
-      border-radius: 6px;
-      padding: 6px 12px;
-      font-family: 'Cinzel', serif;
-      font-size: 12px;
-      color: #b0a47e;
+      position: absolute; bottom: 40px; right: 16px; z-index: 10;
+      background: rgba(26,21,16,0.9); border: 1px solid #3a3528;
+      border-radius: 6px; padding: 6px 12px;
+      font-family: 'Cinzel', serif; font-size: 12px; color: #b0a47e;
       pointer-events: none;
     }
 
-    /* ───────── Loading Overlay ───────── */
-    .loading-overlay { position: absolute; inset: 0; z-index: 100; background: #1a1510; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: opacity 0.8s ease; }
-    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
-    .loading-overlay h2 { font-family: 'Cinzel', serif; color: #e8d5b0; font-size: 24px; letter-spacing: 3px; margin-bottom: 16px; }
-    .loading-overlay p { font-family: 'MedievalSharp', cursive; color: #9a8c6e; font-size: 14px; animation: pulse 1.5s ease-in-out infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 1; } }
+    .marker-wrap { cursor: pointer; text-align: center; line-height: 1; transition: transform 0.15s; }
+    .marker-wrap:hover { transform: scale(1.2); }
+    .marker-icon-major { font-size: 32px; filter: drop-shadow(0 0 6px rgba(200,170,80,0.7)); }
+    .marker-icon-medium { font-size: 22px; filter: drop-shadow(0 0 4px rgba(160,140,80,0.5)); }
+    .marker-icon-small { font-size: 16px; filter: drop-shadow(0 0 3px rgba(120,110,70,0.4)); }
+    .marker-label {
+      position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      white-space: nowrap; font-family: 'Cinzel', serif; font-size: 11px;
+      color: #e8d5b0; text-shadow: 0 0 6px #000, 0 0 12px #000;
+      pointer-events: none; margin-top: 2px;
+    }
 
-    /* ───────── Custom Markers ───────── */
-    .marker-major, .marker-medium, .marker-small { cursor: pointer; transition: transform 0.15s ease; text-align: center; line-height: 1; }
-    .marker-major:hover, .marker-medium:hover, .marker-small:hover { transform: scale(1.2); }
-    .marker-major { font-size: 36px; filter: drop-shadow(0 0 6px rgba(200, 170, 80, 0.6)); }
-    .marker-medium { font-size: 26px; filter: drop-shadow(0 0 4px rgba(160, 140, 80, 0.4)); }
-    .marker-small { font-size: 20px; filter: drop-shadow(0 0 3px rgba(120, 110, 70, 0.3)); }
-    .marker-label { position: absolute; top: 100%; left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: 'MedievalSharp', cursive; font-size: 12px; color: #e8d5b0; text-shadow: 0 0 6px #000, 0 0 12px #000, 1px 1px 2px #000; pointer-events: none; margin-top: 2px; }
-    .marker-medium .marker-label { font-size: 11px; }
-    .marker-small .marker-label { font-size: 10px; color: #c0b89a; }
-
-    /* ───────── Popups ───────── */
-    .maplibregl-popup-content { background: rgba(26, 21, 16, 0.96) !important; border: 1px solid #4a4230 !important; border-radius: 8px !important; color: #d4c8a8 !important; padding: 16px !important; max-width: 260px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important; }
-    .maplibregl-popup-tip { border-top-color: rgba(26, 21, 16, 0.96) !important; }
-    .maplibregl-popup-close-button { color: #9a8c6e !important; font-size: 18px !important; right: 6px !important; top: 4px !important; }
-    .popup-title { font-family: 'Cinzel', serif; font-size: 16px; color: #f0e0a0; margin-bottom: 6px; }
+    .maplibregl-popup-content {
+      background: rgba(26,21,16,0.96) !important;
+      border: 1px solid #4a4230 !important; border-radius: 8px !important;
+      color: #d4c8a8 !important; padding: 16px !important;
+      max-width: 260px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+    }
+    .maplibregl-popup-close-button { color: #9a8c6e !important; font-size: 18px !important; }
+    .popup-title { font-family: 'Cinzel', serif; font-size: 15px; color: #f0e0a0; margin-bottom: 6px; }
     .popup-desc { font-size: 13px; line-height: 1.5; color: #b0a47e; }
-
-    /* ───────── Key Hint ───────── */
-    .key-hint {
-      position: absolute;
-      bottom: 8px;
-      left: 16px;
-      z-index: 10;
-      font-size: 10px;
-      color: #554f3a;
-      pointer-events: none;
-    }
-
-    /* ───────── Mobile ───────── */
-    @media (max-width: 600px) {
-      .title-overlay { top: 10px; left: 10px; }
-      .title-overlay h1 { font-size: 16px; }
-      .controls { top: 10px; right: 10px; }
-      .controls button { font-size: 11px; padding: 6px 10px; }
-      .zoom-indicator { bottom: 24px; right: 10px; font-size: 11px; }
-      .key-hint { display: none; }
-    }
   </style>
 </head>
 <body>
 
-  <div id="map"></div>
+<div id="map"></div>
 
-  <!-- Loading -->
-  <div class="loading-overlay" id="loadingOverlay">
-    <h2>New World</h2>
-    <p>Unrolling the territory map…</p>
-  </div>
+<div class="title-overlay">
+  <h1>⚔️ New World — Territory Map</h1>
+</div>
 
-  <!-- Title -->
-  <div class="title-overlay">
-    <h1>New World — Territory Map</h1>
-    <div class="subtitle">Natural Terrain &amp; Wilderness</div>
-  </div>
+<div class="controls">
+  <button id="roadsBtn" onclick="toggleRoads()">🗺️ DM: Show Roads</button>
+</div>
 
-  <!-- Controls -->
-  <div class="controls">
-    <button id="roadsBtn" onclick="toggleRoads()">🗺️ Toggle Roads</button>
-  </div>
-
-  <!-- Zoom -->
-  <div class="zoom-indicator" id="zoomIndicator">Zoom: 8.0</div>
-
-  <!-- Key hint -->
-  <div class="key-hint">Press <b>R</b> to toggle roads</div>
+<div class="zoom-indicator" id="zoomEl">Zoom: 8.0</div>
 
 <script>
-// ─────────────────────────────────────────
-//  Fantasy City Data
-// ─────────────────────────────────────────
+// ── PMTiles protocol ──
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', protocol.tile);
+
+// ── City data ──
 const cities = [
-  { name: "New Haven",      lng: -84.388, lat: 33.749, size: "major",  icon: "🏰", description: "The largest city in the Georgia territories. A hub of trade and political intrigue." },
-  { name: "Silverbrook",    lng: -84.294, lat: 34.075, size: "medium", icon: "🗼", description: "A prosperous town known for its silver mines." },
-  { name: "Cumming",        lng: -84.100, lat: 34.207, size: "medium", icon: "🗼", description: "A frontier town at the edge of explored territory." },
-  { name: "Brookhaven",     lng: -84.326, lat: 33.865, size: "medium", icon: "🗼", description: "A quiet suburb of New Haven." },
-  { name: "Buckhead",       lng: -84.387, lat: 33.837, size: "medium", icon: "🗼", description: "The noble district of New Haven." },
-  { name: "Helen's Hollow", lng: -83.727, lat: 34.702, size: "small",  icon: "⛺", description: "A remote mountain village." },
+  { name:"New Haven",      lng:-84.388, lat:33.749, size:"major",  icon:"🏰", desc:"The largest city in the Georgia territories. A hub of trade and political intrigue." },
+  { name:"Silverbrook",    lng:-84.294, lat:34.075, size:"medium", icon:"🗼", desc:"A prosperous town known for its silver mines and skilled craftsmen." },
+  { name:"Cumming",        lng:-84.100, lat:34.207, size:"medium", icon:"🗼", desc:"A frontier town at the edge of explored territory." },
+  { name:"Brookhaven",     lng:-84.326, lat:33.865, size:"medium", icon:"🗼", desc:"A quiet suburb of New Haven, known for its gardens and scholars." },
+  { name:"Buckhead",       lng:-84.387, lat:33.837, size:"medium", icon:"🗼", desc:"The noble district of New Haven, where the wealthy make their homes." },
+  { name:"Helen's Hollow", lng:-83.727, lat:34.702, size:"small",  icon:"⛺", desc:"A remote mountain village, famous for its strange folk and stranger rumors." },
 ];
 
-// ─────────────────────────────────────────
-//  Fantasy Color Palette
-// ─────────────────────────────────────────
-const PALETTE = {
-  background:  '#1a1510',
-  land:        '#2a2218',
-  water:       '#1a3a4a',
-  waterDark:   '#142e3a',
-  forest:      '#1a2e1a',
-  parkLight:   '#213a20',
-  mountain:    '#2a2520',
-  sand:        '#c8b89a',
-  text:        '#e8d5b0',
-  road:        '#5a4020',
-  roadCasing:  '#3a2a15',
+// ── Custom fantasy style — terrain only, no roads/buildings ──
+const fantasyStyle = {
+  version: 8,
+  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+  sources: {
+    "ofm": {
+      type: "vector",
+      url: "https://tiles.openfreemap.org/planet"
+    }
+  },
+  layers: [
+    // Background — dark parchment
+    { id:"background", type:"background", paint:{ "background-color":"#1e1a14" } },
+
+    // Land base
+    { id:"land", type:"fill", source:"ofm", "source-layer":"water",
+      filter:["==","$type","Polygon"],
+      paint:{ "fill-color":"#1e1a14" } },
+
+    // Landcover — farmland / grass
+    { id:"landcover-grass", type:"fill", source:"ofm", "source-layer":"landcover",
+      filter:["in","class","grass","meadow","farmland"],
+      paint:{ "fill-color":"#1e2e18", "fill-opacity":0.6 } },
+
+    // Landcover — forest / wood / scrub
+    { id:"landcover-forest", type:"fill", source:"ofm", "source-layer":"landcover",
+      filter:["in","class","wood","forest","scrub"],
+      paint:{ "fill-color":"#162814", "fill-opacity":0.85 } },
+
+    // Landcover — wetland / marsh
+    { id:"landcover-wetland", type:"fill", source:"ofm", "source-layer":"landcover",
+      filter:["in","class","wetland"],
+      paint:{ "fill-color":"#1a2e30", "fill-opacity":0.7 } },
+
+    // Landcover — sand / beach
+    { id:"landcover-sand", type:"fill", source:"ofm", "source-layer":"landcover",
+      filter:["in","class","sand"],
+      paint:{ "fill-color":"#c8b89a", "fill-opacity":0.45 } },
+
+    // Landcover — glacier / ice
+    { id:"landcover-ice", type:"fill", source:"ofm", "source-layer":"landcover",
+      filter:["in","class","ice"],
+      paint:{ "fill-color":"#3a4a5a", "fill-opacity":0.5 } },
+
+    // Park / natural areas
+    { id:"park", type:"fill", source:"ofm", "source-layer":"park",
+      paint:{ "fill-color":"#1e3a1c", "fill-opacity":0.5 } },
+
+    // Water fill
+    { id:"water", type:"fill", source:"ofm", "source-layer":"water",
+      paint:{ "fill-color":"#1a3848", "fill-opacity":1 } },
+
+    // Water lines — rivers, streams
+    { id:"waterway", type:"line", source:"ofm", "source-layer":"waterway",
+      paint:{ "line-color":"#1e4458", "line-width":["interpolate",["linear"],["zoom"],4,0.5,10,2,14,4], "line-opacity":0.9 } },
+
+    // === DM ROAD LAYERS (hidden by default) ===
+    { id:"dm-roads-casing", type:"line", source:"ofm", "source-layer":"transportation",
+      filter:["in","class","motorway","trunk","primary"],
+      layout:{ "visibility":"none" },
+      paint:{ "line-color":"#3a2510", "line-width":["interpolate",["linear"],["zoom"],5,2,10,5,14,10], "line-opacity":0.8 } },
+    { id:"dm-roads", type:"line", source:"ofm", "source-layer":"transportation",
+      filter:["in","class","motorway","trunk","primary"],
+      layout:{ "visibility":"none", "line-cap":"round" },
+      paint:{ "line-color":"#6a4820", "line-width":["interpolate",["linear"],["zoom"],5,1,10,3,14,6],
+              "line-dasharray":[5,3], "line-opacity":0.7 } },
+  ]
 };
 
-// ─────────────────────────────────────────
-//  Keywords for layer filtering
-// ─────────────────────────────────────────
-const REMOVE_KEYWORDS = [
-  'road', 'street', 'highway', 'motorway', 'trunk', 'primary', 'secondary',
-  'tertiary', 'residential', 'service', 'path', 'track', 'pedestrian',
-  'building', 'housenumber', 'house',
-  'transit', 'rail', 'railway', 'ferry',
-  'bridge', 'tunnel',
-  'poi', 'icon', 'label', 'name', 'place',
-  'aeroway', 'aero',
-  'parking', 'commercial', 'industrial',
-  'boundary', 'admin',
-  'contour',
-];
+// ── Init map ──
+const map = new maplibregl.Map({
+  container: 'map',
+  style: fantasyStyle,
+  center: [-84.2, 34.0],
+  zoom: 8,
+  minZoom: 3,
+  maxZoom: 16,
+});
 
-const KEEP_KEYWORDS = [
-  'water', 'ocean', 'sea', 'lake', 'river', 'stream',
-  'landcover', 'landuse_forest', 'landuse_park', 'landuse_grass',
-  'land', 'background',
-  'hillshade', 'terrain', 'contour',
-  'national', 'park', 'forest', 'wood', 'natural',
-  'grass', 'meadow', 'scrub', 'wetland', 'marsh',
-  'sand', 'beach', 'glacier', 'ice',
-];
+map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
 
-function shouldKeepLayer(layer) {
-  const id = layer.id.toLowerCase();
-  const src = (layer['source-layer'] || '').toLowerCase();
-
-  // Always keep background
-  if (layer.type === 'background') return true;
-
-  // Explicit keep check first
-  for (const kw of KEEP_KEYWORDS) {
-    if (id.includes(kw) || src.includes(kw)) return true;
-  }
-
-  // Remove anything matching remove keywords
-  for (const kw of REMOVE_KEYWORDS) {
-    if (id.includes(kw) || src.includes(kw)) return false;
-  }
-
-  // Keep hillshade/raster layers
-  if (layer.type === 'hillshade' || layer.type === 'raster') return true;
-
-  // Default: remove (be aggressive about hiding man-made stuff)
-  return false;
-}
-
-// ─────────────────────────────────────────
-//  Restyle kept layers to fantasy palette
-// ─────────────────────────────────────────
-function restyleLayer(layer) {
-  const id = layer.id.toLowerCase();
-  const src = (layer['source-layer'] || '').toLowerCase();
-
-  // Background
-  if (layer.type === 'background') {
-    layer.paint = { 'background-color': PALETTE.background };
-    return layer;
-  }
-
-  // Water fills
-  if (layer.type === 'fill' && (id.includes('water') || id.includes('ocean') || src.includes('water'))) {
-    layer.paint = layer.paint || {};
-    layer.paint['fill-color'] = PALETTE.water;
-    layer.paint['fill-opacity'] = 1;
-    delete layer.paint['fill-pattern'];
-    return layer;
-  }
-
-  // Water lines (rivers, streams)
-  if (layer.type === 'line' && (id.includes('water') || src.includes('water'))) {
-    layer.paint = layer.paint || {};
-    layer.paint['line-color'] = PALETTE.water;
-    layer.paint['line-opacity'] = 0.9;
-    return layer;
-  }
-
-  // Forest / wood / vegetation fills
-  if (layer.type === 'fill' && (id.includes('forest') || id.includes('wood') ||
-      id.includes('grass') || id.includes('meadow') || id.includes('scrub') ||
-      id.includes('wetland') || id.includes('marsh') || src.includes('landcover'))) {
-    layer.paint = layer.paint || {};
-    // Check for specific vegetation types
-    if (id.includes('grass') || id.includes('meadow')) {
-      layer.paint['fill-color'] = '#1e3318';
-    } else if (id.includes('wetland') || id.includes('marsh')) {
-      layer.paint['fill-color'] = '#1a3030';
-    } else {
-      layer.paint['fill-color'] = PALETTE.forest;
-    }
-    layer.paint['fill-opacity'] = 0.8;
-    delete layer.paint['fill-pattern'];
-    return layer;
-  }
-
-  // Parks / national parks
-  if (layer.type === 'fill' && (id.includes('park') || id.includes('national') ||
-      id.includes('nature') || id.includes('protected'))) {
-    layer.paint = layer.paint || {};
-    layer.paint['fill-color'] = PALETTE.parkLight;
-    layer.paint['fill-opacity'] = 0.7;
-    delete layer.paint['fill-pattern'];
-    return layer;
-  }
-
-  // Sand / beach
-  if (layer.type === 'fill' && (id.includes('sand') || id.includes('beach'))) {
-    layer.paint = layer.paint || {};
-    layer.paint['fill-color'] = PALETTE.sand;
-    layer.paint['fill-opacity'] = 0.5;
-    delete layer.paint['fill-pattern'];
-    return layer;
-  }
-
-  // Glacier / ice
-  if (layer.type === 'fill' && (id.includes('glacier') || id.includes('ice'))) {
-    layer.paint = layer.paint || {};
-    layer.paint['fill-color'] = '#3a4a5a';
-    layer.paint['fill-opacity'] = 0.6;
-    delete layer.paint['fill-pattern'];
-    return layer;
-  }
-
-  // Hillshade
-  if (layer.type === 'hillshade') {
-    layer.paint = layer.paint || {};
-    layer.paint['hillshade-shadow-color'] = '#0a0a08';
-    layer.paint['hillshade-highlight-color'] = '#3a3528';
-    layer.paint['hillshade-accent-color'] = PALETTE.mountain;
-    layer.paint['hillshade-exaggeration'] = 0.5;
-    return layer;
-  }
-
-  // Generic landuse/landcover fills we didn't catch — make them land-colored
-  if (layer.type === 'fill' && (id.includes('land') || src.includes('land'))) {
-    layer.paint = layer.paint || {};
-    layer.paint['fill-color'] = PALETTE.land;
-    layer.paint['fill-opacity'] = 0.6;
-    delete layer.paint['fill-pattern'];
-    return layer;
-  }
-
-  // Any remaining text/symbol layers — hide them (we add our own)
-  if (layer.type === 'symbol') {
-    layer.layout = layer.layout || {};
-    layer.layout['visibility'] = 'none';
-    return layer;
-  }
-
-  return layer;
-}
-
-// ─────────────────────────────────────────
-//  Build road layers (for DM toggle)
-// ─────────────────────────────────────────
-function buildRoadLayers(style) {
-  // Find a road source from the original style
-  const roadSource = Object.keys(style.sources)[0]; // usually 'openmaptiles' or similar
-
-  return [
-    {
-      id: 'fantasy-roads-casing',
-      type: 'line',
-      source: roadSource,
-      'source-layer': 'transportation',
-      filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-        'visibility': 'none',
-      },
-      paint: {
-        'line-color': PALETTE.roadCasing,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1.5, 10, 4, 14, 8],
-        'line-opacity': 0.7,
-      },
-    },
-    {
-      id: 'fantasy-roads',
-      type: 'line',
-      source: roadSource,
-      'source-layer': 'transportation',
-      filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
-      layout: {
-        'line-cap': 'round',
-        'line-join': 'round',
-        'visibility': 'none',
-      },
-      paint: {
-        'line-color': PALETTE.road,
-        'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.8, 10, 2.5, 14, 5],
-        'line-opacity': 0.6,
-        'line-dasharray': [6, 3],
-      },
-    },
-  ];
-}
-
-// ─────────────────────────────────────────
-//  Fetch style, filter, restyle, init map
-// ─────────────────────────────────────────
-let map;
-let roadsVisible = false;
-
-async function initMap() {
-  try {
-    const response = await fetch('https://tiles.openfreemap.org/styles/liberty');
-    const style = await response.json();
-
-    // Log original layer count for debugging
-    const originalCount = style.layers.length;
-
-    // Filter layers — keep only natural/terrain
-    style.layers = style.layers.filter(shouldKeepLayer);
-
-    // Restyle kept layers with fantasy palette
-    style.layers = style.layers.map(restyleLayer);
-
-    // Add road layers (hidden by default) for DM toggle
-    const roadLayers = buildRoadLayers(style);
-    style.layers.push(...roadLayers);
-
-    console.log(`Fantasy style: kept ${style.layers.length - roadLayers.length}/${originalCount} layers (+ ${roadLayers.length} road layers hidden)`);
-
-    // Create the map
-    map = new maplibregl.Map({
-      container: 'map',
-      style: style,
-      center: [-84.2, 34.0],
-      zoom: 8,
-      minZoom: 3,
-      maxZoom: 18,
-      attributionControl: true,
-    });
-
-    map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
-
-    map.on('load', () => {
-      // Hide loading overlay
-      document.getElementById('loadingOverlay').classList.add('hidden');
-
-      // Add markers
-      addMarkers();
-    });
-
-    map.on('zoomend', addMarkers);
-    map.on('zoom', updateZoom);
-
-  } catch (err) {
-    console.error('Failed to load map style:', err);
-    document.getElementById('loadingOverlay').innerHTML =
-      `<h2 style="color:#c04030;">Map Load Error</h2><p style="color:#b0a47e;">${err.message}</p>`;
-  }
-}
-
-// ─────────────────────────────────────────
-//  Toggle Roads (DM tool)
-// ─────────────────────────────────────────
-function toggleRoads() {
-  if (!map) return;
-  roadsVisible = !roadsVisible;
-
-  const visibility = roadsVisible ? 'visible' : 'none';
-  const btn = document.getElementById('roadsBtn');
-  btn.classList.toggle('active', roadsVisible);
-
-  try {
-    map.setLayoutProperty('fantasy-roads', 'visibility', visibility);
-    map.setLayoutProperty('fantasy-roads-casing', 'visibility', visibility);
-  } catch (e) {
-    console.warn('Road layers not available:', e.message);
-  }
-}
-
-// ─────────────────────────────────────────
-//  Marker Management
-// ─────────────────────────────────────────
+// ── Markers ──
 let markers = [];
 
-function createMarkerElement(city) {
-  const el = document.createElement('div');
-  el.className = `marker-${city.size}`;
-  el.innerHTML = `${city.icon}<div class="marker-label">${city.name}</div>`;
-  el.title = city.name;
-  return el;
-}
-
-function createPopupHTML(city) {
-  return `
-    <div class="popup-title">${city.icon} ${city.name}</div>
-    <div class="popup-desc">${city.description}</div>
-  `;
-}
-
 function addMarkers() {
-  if (!map) return;
-  const zoom = map.getZoom();
-
   markers.forEach(m => m.remove());
   markers = [];
+  const zoom = map.getZoom();
 
   cities.forEach(city => {
-    let visible = false;
-    if (city.size === 'major' && zoom >= 5)  visible = true;
-    if (city.size === 'medium' && zoom >= 7) visible = true;
-    if (city.size === 'small' && zoom >= 10) visible = true;
+    const show = (city.size==="major" && zoom>=5) ||
+                 (city.size==="medium" && zoom>=7) ||
+                 (city.size==="small" && zoom>=9);
+    if (!show) return;
 
-    if (!visible) return;
+    const el = document.createElement('div');
+    el.className = 'marker-wrap';
+    el.innerHTML = `<div class="marker-icon-${city.size}">${city.icon}</div><div class="marker-label">${city.name}</div>`;
 
-    const el = createMarkerElement(city);
-    const popup = new maplibregl.Popup({
-      offset: 25,
-      closeButton: true,
-      closeOnClick: true,
-      maxWidth: '260px',
-    }).setHTML(createPopupHTML(city));
+    const popup = new maplibregl.Popup({ offset:25, maxWidth:'260px' })
+      .setHTML(`<div class="popup-title">${city.icon} ${city.name}</div><div class="popup-desc">${city.desc}</div>`);
 
-    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
-      .setLngLat([city.lng, city.lat])
-      .setPopup(popup)
-      .addTo(map);
-
-    markers.push(marker);
+    markers.push(
+      new maplibregl.Marker({ element: el, anchor:'bottom' })
+        .setLngLat([city.lng, city.lat])
+        .setPopup(popup)
+        .addTo(map)
+    );
   });
 }
 
-// ─────────────────────────────────────────
-//  Zoom Indicator
-// ─────────────────────────────────────────
-const zoomEl = document.getElementById('zoomIndicator');
-function updateZoom() {
-  if (!map) return;
-  zoomEl.textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
-}
-
-// ─────────────────────────────────────────
-//  Keyboard Shortcut
-// ─────────────────────────────────────────
-document.addEventListener('keydown', (e) => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
-  if (e.key === 'r' || e.key === 'R') toggleRoads();
+map.on('load', addMarkers);
+map.on('zoomend', addMarkers);
+map.on('zoom', () => {
+  document.getElementById('zoomEl').textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
 });
 
-// ─────────────────────────────────────────
-//  Boot
-// ─────────────────────────────────────────
-initMap();
-</script>
+// ── Road toggle ──
+let roadsOn = false;
+function toggleRoads() {
+  roadsOn = !roadsOn;
+  const v = roadsOn ? 'visible' : 'none';
+  map.setLayoutProperty('dm-roads', 'visibility', v);
+  map.setLayoutProperty('dm-roads-casing', 'visibility', v);
+  document.getElementById('roadsBtn').classList.toggle('active', roadsOn);
+  document.getElementById('roadsBtn').textContent = roadsOn ? '🗺️ DM: Hide Roads' : '🗺️ DM: Show Roads';
+}
 
+document.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') toggleRoads();
+});
+</script>
 </body>
 </html>
