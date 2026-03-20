@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TTRPG Platform — Test Runner</title>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0d0b08;
+      color: #d4c8a8;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    h1 {
+      font-family: 'Cinzel', serif;
+      font-size: 24px;
+      color: #f0e0a0;
+      letter-spacing: 2px;
+    }
+
+    .summary {
+      font-size: 16px;
+      font-weight: 600;
+      padding: 8px 16px;
+      border-radius: 8px;
+      background: rgba(30, 26, 20, 0.9);
+      border: 1px solid #3a3528;
+    }
+
+    .summary.all-pass { border-color: #2a6a2a; color: #6ade6a; }
+    .summary.some-fail { border-color: #6a2a2a; color: #de6a6a; }
+    .summary.running { border-color: #6a5a2a; color: #dec06a; }
+
+    .controls {
+      display: flex; gap: 12px; align-items: center;
+    }
+
+    button {
+      font-family: 'Cinzel', serif;
+      font-size: 13px;
+      background: rgba(26, 21, 16, 0.92);
+      color: #d4c8a8;
+      border: 1px solid #3a3528;
+      border-radius: 6px;
+      padding: 10px 18px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      background: rgba(50, 40, 28, 0.95);
+      border-color: #6a5f3e;
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .test-group {
+      background: rgba(20, 17, 12, 0.95);
+      border: 1px solid #2a2520;
+      border-radius: 10px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .test-group-header {
+      font-family: 'Cinzel', serif;
+      font-size: 15px;
+      color: #e8d5b0;
+      padding: 14px 18px;
+      background: rgba(30, 26, 20, 0.8);
+      border-bottom: 1px solid #2a2520;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .test-group-header .group-icon { font-size: 18px; }
+
+    .test-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 18px;
+      border-bottom: 1px solid rgba(42, 37, 32, 0.5);
+      transition: background 0.15s;
+    }
+
+    .test-item:last-child { border-bottom: none; }
+    .test-item:hover { background: rgba(40, 35, 25, 0.4); }
+
+    .test-status {
+      font-size: 18px;
+      width: 30px;
+      text-align: center;
+      flex-shrink: 0;
+    }
+
+    .test-name {
+      flex: 1;
+      font-size: 14px;
+      color: #b0a47e;
+    }
+
+    .test-time {
+      font-size: 12px;
+      color: #6a6248;
+      min-width: 70px;
+      text-align: right;
+    }
+
+    .test-detail {
+      font-size: 11px;
+      color: #7a6a4a;
+      margin-left: 8px;
+      max-width: 300px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .test-item.pass .test-name { color: #6ade6a; }
+    .test-item.fail .test-name { color: #de6a6a; }
+    .test-item.pending .test-name { color: #dec06a; }
+    .test-item.skip .test-name { color: #6a6248; }
+
+    /* Hidden iframes for testing */
+    .iframe-container {
+      position: fixed;
+      top: -9999px;
+      left: -9999px;
+      width: 1024px;
+      height: 768px;
+      overflow: hidden;
+    }
+
+    .iframe-container iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .note {
+      font-size: 12px;
+      color: #6a6248;
+      margin-top: 16px;
+      padding: 12px;
+      background: rgba(20, 17, 12, 0.7);
+      border: 1px solid #2a2520;
+      border-radius: 6px;
+      line-height: 1.6;
+    }
+
+    .note strong { color: #b0a47e; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚔️ TTRPG Platform — Test Runner</h1>
+  <div class="controls">
+    <div class="summary running" id="summary">⏳ Initializing...</div>
+    <button id="rerunBtn" onclick="runAllTests()" disabled>🔄 Re-run Tests</button>
+  </div>
+</header>
+
+<div id="testGroups"></div>
+
+<div class="note">
+  <strong>Note:</strong> Iframe-based tests require same-origin access. If POC files are served from a
+  different origin (e.g., <code>file://</code>), iframe DOM checks will be skipped. Use a local HTTP
+  server: <code>npx serve ..</code> or <code>python3 -m http.server</code> from the project root.
+</div>
+
+<!-- Hidden iframes -->
+<div class="iframe-container">
+  <iframe id="iframe-poc1" sandbox="allow-scripts allow-same-origin"></iframe>
+  <iframe id="iframe-poc2" sandbox="allow-scripts allow-same-origin"></iframe>
+</div>
+
+<script>
+// ─────────────────────────────────────
+//  Test Framework
+// ─────────────────────────────────────
+const testGroups = [
+  {
+    name: 'POC 1 — Interactive Map',
+    icon: '🗺️',
+    tests: [
+      { id: 'poc1-load',    name: 'Page loads without error' },
+      { id: 'poc1-canvas',  name: 'MapLibre canvas element exists' },
+      { id: 'poc1-render',  name: 'Map canvas has non-zero dimensions' },
+      { id: 'poc1-markers', name: 'At least one city marker in DOM' },
+    ]
+  },
+  {
+    name: 'POC 2 — Fantasy Style Map',
+    icon: '🏰',
+    tests: [
+      { id: 'poc2-load',    name: 'Page loads without error' },
+      { id: 'poc2-canvas',  name: 'MapLibre canvas element exists' },
+      { id: 'poc2-render',  name: 'Map canvas has non-zero dimensions' },
+      { id: 'poc2-overlay', name: 'Loading overlay hidden after timeout' },
+      { id: 'poc2-markers', name: 'At least one city marker in DOM' },
+    ]
+  },
+  {
+    name: 'Tile & CDN Connectivity',
+    icon: '🌐',
+    tests: [
+      { id: 'tile-ofm',       name: 'OpenFreeMap tile source (tiles.openfreemap.org/planet)' },
+      { id: 'tile-demotiles',  name: 'MapLibre demo tiles (demotiles.maplibre.org)' },
+      { id: 'cdn-maplibre',   name: 'MapLibre GL JS CDN (unpkg.com)' },
+      { id: 'cdn-pmtiles',    name: 'PMTiles CDN (unpkg.com)' },
+      { id: 'cdn-fonts',      name: 'Google Fonts (fonts.googleapis.com)' },
+    ]
+  }
+];
+
+let results = {};
+let startTimes = {};
+let totalTests = 0;
+
+// ─────────────────────────────────────
+//  Render UI
+// ─────────────────────────────────────
+function renderUI() {
+  const container = document.getElementById('testGroups');
+  container.innerHTML = '';
+
+  testGroups.forEach(group => {
+    const groupEl = document.createElement('div');
+    groupEl.className = 'test-group';
+
+    const headerEl = document.createElement('div');
+    headerEl.className = 'test-group-header';
+    headerEl.innerHTML = `<span class="group-icon">${group.icon}</span> ${group.name}`;
+    groupEl.appendChild(headerEl);
+
+    group.tests.forEach(test => {
+      const itemEl = document.createElement('div');
+      itemEl.className = 'test-item ' + (results[test.id]?.status || 'pending');
+      itemEl.id = `test-${test.id}`;
+
+      const r = results[test.id] || {};
+      const statusIcon = r.status === 'pass' ? '✅' : r.status === 'fail' ? '❌' : r.status === 'skip' ? '⏭️' : '⏳';
+      const elapsed = r.elapsed != null ? `${r.elapsed}ms` : '—';
+
+      itemEl.innerHTML = `
+        <span class="test-status">${statusIcon}</span>
+        <span class="test-name">${test.name}</span>
+        ${r.detail ? `<span class="test-detail" title="${r.detail}">${r.detail}</span>` : ''}
+        <span class="test-time">${elapsed}</span>
+      `;
+      groupEl.appendChild(itemEl);
+    });
+
+    container.appendChild(groupEl);
+  });
+
+  updateSummary();
+}
+
+function updateSummary() {
+  const total = totalTests;
+  const passed = Object.values(results).filter(r => r.status === 'pass').length;
+  const failed = Object.values(results).filter(r => r.status === 'fail').length;
+  const skipped = Object.values(results).filter(r => r.status === 'skip').length;
+  const pending = total - passed - failed - skipped;
+
+  const summaryEl = document.getElementById('summary');
+  if (pending > 0) {
+    summaryEl.textContent = `⏳ Running... ${passed}/${total} passing`;
+    summaryEl.className = 'summary running';
+  } else if (failed > 0) {
+    summaryEl.textContent = `❌ ${passed}/${total} passing, ${failed} failed`;
+    summaryEl.className = 'summary some-fail';
+  } else {
+    summaryEl.textContent = `✅ ${passed}/${total} passing`;
+    summaryEl.className = 'summary all-pass';
+  }
+}
+
+// ─────────────────────────────────────
+//  Test Helpers
+// ─────────────────────────────────────
+function recordResult(id, status, detail) {
+  const elapsed = startTimes[id] ? Date.now() - startTimes[id] : null;
+  results[id] = { status, detail: detail || '', elapsed };
+  renderUI();
+}
+
+function startTest(id) {
+  startTimes[id] = Date.now();
+  results[id] = { status: 'pending', detail: '', elapsed: null };
+}
+
+async function fetchCheck(url, timeout = 10000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const resp = await fetch(url, { method: 'HEAD', mode: 'no-cors', signal: ctrl.signal });
+    clearTimeout(timer);
+    // no-cors returns opaque response — status 0 is "success" for no-cors
+    return true;
+  } catch (e) {
+    clearTimeout(timer);
+    return false;
+  }
+}
+
+async function fetchCheckCors(url, timeout = 10000) {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), timeout);
+  try {
+    const resp = await fetch(url, { method: 'GET', signal: ctrl.signal });
+    clearTimeout(timer);
+    return { ok: resp.ok, status: resp.status };
+  } catch (e) {
+    clearTimeout(timer);
+    return { ok: false, status: e.message };
+  }
+}
+
+// ─────────────────────────────────────
+//  Connectivity Tests
+// ─────────────────────────────────────
+async function runConnectivityTests() {
+  const checks = [
+    { id: 'tile-ofm',      url: 'https://tiles.openfreemap.org/planet', cors: true },
+    { id: 'tile-demotiles', url: 'https://demotiles.maplibre.org/tiles/tiles.json', cors: true },
+    { id: 'cdn-maplibre',  url: 'https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js', cors: false },
+    { id: 'cdn-pmtiles',   url: 'https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js', cors: false },
+    { id: 'cdn-fonts',     url: 'https://fonts.googleapis.com/css2?family=Cinzel', cors: false },
+  ];
+
+  for (const check of checks) {
+    startTest(check.id);
+  }
+  renderUI();
+
+  await Promise.all(checks.map(async (check) => {
+    try {
+      if (check.cors) {
+        const result = await fetchCheckCors(check.url);
+        if (result.ok) {
+          recordResult(check.id, 'pass', `HTTP ${result.status}`);
+        } else {
+          recordResult(check.id, 'fail', `HTTP ${result.status}`);
+        }
+      } else {
+        const ok = await fetchCheck(check.url);
+        recordResult(check.id, ok ? 'pass' : 'fail', ok ? 'Reachable' : 'Unreachable');
+      }
+    } catch (e) {
+      recordResult(check.id, 'fail', e.message);
+    }
+  }));
+}
+
+// ─────────────────────────────────────
+//  Iframe-based POC Tests
+// ─────────────────────────────────────
+function waitForIframe(iframe, timeout = 15000) {
+  return new Promise((resolve) => {
+    let resolved = false;
+    const timer = setTimeout(() => {
+      if (!resolved) { resolved = true; resolve(false); }
+    }, timeout);
+
+    iframe.onload = () => {
+      if (!resolved) { resolved = true; clearTimeout(timer); resolve(true); }
+    };
+
+    iframe.onerror = () => {
+      if (!resolved) { resolved = true; clearTimeout(timer); resolve(false); }
+    };
+  });
+}
+
+function getIframeDoc(iframe) {
+  try {
+    return iframe.contentDocument || iframe.contentWindow?.document;
+  } catch (e) {
+    return null; // cross-origin
+  }
+}
+
+async function runPoc1Tests() {
+  const ids = ['poc1-load', 'poc1-canvas', 'poc1-render', 'poc1-markers'];
+  ids.forEach(id => startTest(id));
+  renderUI();
+
+  const iframe = document.getElementById('iframe-poc1');
+  iframe.src = '../poc-01-map/index.html';
+
+  const loaded = await waitForIframe(iframe, 15000);
+
+  if (!loaded) {
+    recordResult('poc1-load', 'fail', 'Iframe failed to load within 15s');
+    ids.slice(1).forEach(id => recordResult(id, 'skip', 'Page did not load'));
+    return;
+  }
+
+  recordResult('poc1-load', 'pass', 'Iframe loaded');
+
+  const doc = getIframeDoc(iframe);
+  if (!doc) {
+    ids.slice(1).forEach(id => recordResult(id, 'skip', 'Cross-origin: cannot access iframe DOM'));
+    return;
+  }
+
+  // Wait for map to render
+  await new Promise(r => setTimeout(r, 5000));
+
+  // Canvas check
+  const canvas = doc.querySelector('canvas.maplibregl-canvas') || doc.querySelector('canvas');
+  if (canvas) {
+    recordResult('poc1-canvas', 'pass', `Found <canvas> (${canvas.width}×${canvas.height})`);
+  } else {
+    recordResult('poc1-canvas', 'fail', 'No canvas element found');
+  }
+
+  // Render check
+  if (canvas && canvas.width > 0 && canvas.height > 0) {
+    recordResult('poc1-render', 'pass', `${canvas.width}×${canvas.height}`);
+  } else {
+    recordResult('poc1-render', 'fail', canvas ? `Canvas is ${canvas.width}×${canvas.height}` : 'No canvas');
+  }
+
+  // Marker check
+  const markers = doc.querySelectorAll('.marker-major, .marker-medium, .marker-small');
+  if (markers.length > 0) {
+    recordResult('poc1-markers', 'pass', `${markers.length} marker(s) found`);
+  } else {
+    recordResult('poc1-markers', 'fail', 'No markers found in DOM');
+  }
+}
+
+async function runPoc2Tests() {
+  const ids = ['poc2-load', 'poc2-canvas', 'poc2-render', 'poc2-overlay', 'poc2-markers'];
+  ids.forEach(id => startTest(id));
+  renderUI();
+
+  const iframe = document.getElementById('iframe-poc2');
+  iframe.src = '../poc-02-fantasy-style/index.html';
+
+  const loaded = await waitForIframe(iframe, 15000);
+
+  if (!loaded) {
+    recordResult('poc2-load', 'fail', 'Iframe failed to load within 15s');
+    ids.slice(1).forEach(id => recordResult(id, 'skip', 'Page did not load'));
+    return;
+  }
+
+  recordResult('poc2-load', 'pass', 'Iframe loaded');
+
+  const doc = getIframeDoc(iframe);
+  if (!doc) {
+    ids.slice(1).forEach(id => recordResult(id, 'skip', 'Cross-origin: cannot access iframe DOM'));
+    return;
+  }
+
+  // Wait for map to render (POC 2 has more complex style loading)
+  await new Promise(r => setTimeout(r, 8000));
+
+  // Canvas check
+  const canvas = doc.querySelector('canvas.maplibregl-canvas') || doc.querySelector('canvas');
+  if (canvas) {
+    recordResult('poc2-canvas', 'pass', `Found <canvas> (${canvas.width}×${canvas.height})`);
+  } else {
+    recordResult('poc2-canvas', 'fail', 'No canvas element found');
+  }
+
+  // Render check
+  if (canvas && canvas.width > 0 && canvas.height > 0) {
+    recordResult('poc2-render', 'pass', `${canvas.width}×${canvas.height}`);
+  } else {
+    recordResult('poc2-render', 'fail', canvas ? `Canvas is ${canvas.width}×${canvas.height}` : 'No canvas');
+  }
+
+  // Loading overlay check
+  const overlay = doc.querySelector('.loading-overlay, #loading, .loading');
+  if (!overlay) {
+    recordResult('poc2-overlay', 'pass', 'No loading overlay in DOM');
+  } else {
+    const style = iframe.contentWindow.getComputedStyle(overlay);
+    const hidden = style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+    if (hidden) {
+      recordResult('poc2-overlay', 'pass', 'Loading overlay is hidden');
+    } else {
+      recordResult('poc2-overlay', 'fail', 'Loading overlay still visible after 8s');
+    }
+  }
+
+  // Marker check — POC 2 uses .marker-wrap class
+  const markers = doc.querySelectorAll('.marker-wrap, .marker-major, .marker-medium, .marker-small');
+  if (markers.length > 0) {
+    recordResult('poc2-markers', 'pass', `${markers.length} marker(s) found`);
+  } else {
+    recordResult('poc2-markers', 'fail', 'No markers found in DOM');
+  }
+}
+
+// ─────────────────────────────────────
+//  Run All
+// ─────────────────────────────────────
+async function runAllTests() {
+  const btn = document.getElementById('rerunBtn');
+  btn.disabled = true;
+
+  // Reset
+  results = {};
+  startTimes = {};
+  totalTests = testGroups.reduce((sum, g) => sum + g.tests.length, 0);
+  testGroups.forEach(g => g.tests.forEach(t => {
+    results[t.id] = { status: 'pending', detail: '', elapsed: null };
+  }));
+  renderUI();
+
+  // Run connectivity tests first (fast, no iframes)
+  await runConnectivityTests();
+
+  // Run POC tests in parallel
+  await Promise.all([
+    runPoc1Tests(),
+    runPoc2Tests(),
+  ]);
+
+  btn.disabled = false;
+}
+
+// Auto-run on load
+window.addEventListener('DOMContentLoaded', () => {
+  totalTests = testGroups.reduce((sum, g) => sum + g.tests.length, 0);
+  renderUI();
+  runAllTests();
+});
+</script>
+</body>
+</html>

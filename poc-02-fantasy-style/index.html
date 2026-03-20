@@ -44,6 +44,35 @@
       pointer-events: none;
     }
 
+    .tile-status {
+      position: absolute; bottom: 70px; right: 16px; z-index: 10;
+      background: rgba(26,21,16,0.9); border: 1px solid #3a3528;
+      border-radius: 6px; padding: 6px 12px;
+      font-family: 'Cinzel', serif; font-size: 11px; color: #7a9f6a;
+      pointer-events: none; display: none;
+    }
+    .tile-status.warning { color: #dea06a; border-color: #5a4020; }
+    .tile-status.visible { display: block; }
+
+    /* Loading overlay */
+    .loading-overlay {
+      position: absolute; inset: 0; z-index: 100;
+      background: #1a1510;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: opacity 0.6s ease;
+    }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #3a3528; border-top-color: #b09040;
+      border-radius: 50%; animation: spin 1s linear infinite;
+    }
+    .loading-text {
+      font-family: 'Cinzel', serif; font-size: 14px; color: #b0a47e;
+      margin-top: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
     .marker-wrap { cursor: pointer; text-align: center; line-height: 1; transition: transform 0.15s; }
     .marker-wrap:hover { transform: scale(1.2); }
     .marker-icon-major { font-size: 32px; filter: drop-shadow(0 0 6px rgba(200,170,80,0.7)); }
@@ -71,6 +100,12 @@
 
 <div id="map"></div>
 
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">Loading map tiles...</div>
+</div>
+
 <div class="title-overlay">
   <h1>⚔️ New World — Territory Map</h1>
 </div>
@@ -80,6 +115,7 @@
 </div>
 
 <div class="zoom-indicator" id="zoomEl">Zoom: 8.0</div>
+<div class="tile-status" id="tileStatus"></div>
 
 <script>
 // ── PMTiles protocol ──
@@ -96,110 +132,297 @@ const cities = [
   { name:"Helen's Hollow", lng:-83.727, lat:34.702, size:"small",  icon:"⛺", desc:"A remote mountain village, famous for its strange folk and stranger rumors." },
 ];
 
-// ── Custom fantasy style — terrain only, no roads/buildings ──
-const fantasyStyle = {
-  version: 8,
-  glyphs: "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
-  sources: {
-    "ofm": {
-      type: "vector",
-      url: "https://tiles.openfreemap.org/planet"
+// ── Tile source detection & fallback ──
+const TILE_SOURCES = {
+  openfreemap: {
+    name: 'OpenFreeMap',
+    testUrl: 'https://tiles.openfreemap.org/planet',
+    type: 'vector',
+    source: {
+      type: 'vector',
+      url: 'https://tiles.openfreemap.org/planet'
+    },
+    // Source-layer names for OpenFreeMap (OpenMapTiles schema)
+    layers: {
+      water: 'water',
+      waterway: 'waterway',
+      landcover: 'landcover',
+      park: 'park',
+      transportation: 'transportation',
     }
   },
-  layers: [
-    // Background — dark parchment
-    { id:"background", type:"background", paint:{ "background-color":"#1e1a14" } },
-
-    // Land base
-    { id:"land", type:"fill", source:"ofm", "source-layer":"water",
-      filter:["==","$type","Polygon"],
-      paint:{ "fill-color":"#1e1a14" } },
-
-    // Landcover — farmland / grass
-    { id:"landcover-grass", type:"fill", source:"ofm", "source-layer":"landcover",
-      filter:["in","class","grass","meadow","farmland"],
-      paint:{ "fill-color":"#1e2e18", "fill-opacity":0.6 } },
-
-    // Landcover — forest / wood / scrub
-    { id:"landcover-forest", type:"fill", source:"ofm", "source-layer":"landcover",
-      filter:["in","class","wood","forest","scrub"],
-      paint:{ "fill-color":"#162814", "fill-opacity":0.85 } },
-
-    // Landcover — wetland / marsh
-    { id:"landcover-wetland", type:"fill", source:"ofm", "source-layer":"landcover",
-      filter:["in","class","wetland"],
-      paint:{ "fill-color":"#1a2e30", "fill-opacity":0.7 } },
-
-    // Landcover — sand / beach
-    { id:"landcover-sand", type:"fill", source:"ofm", "source-layer":"landcover",
-      filter:["in","class","sand"],
-      paint:{ "fill-color":"#c8b89a", "fill-opacity":0.45 } },
-
-    // Landcover — glacier / ice
-    { id:"landcover-ice", type:"fill", source:"ofm", "source-layer":"landcover",
-      filter:["in","class","ice"],
-      paint:{ "fill-color":"#3a4a5a", "fill-opacity":0.5 } },
-
-    // Park / natural areas
-    { id:"park", type:"fill", source:"ofm", "source-layer":"park",
-      paint:{ "fill-color":"#1e3a1c", "fill-opacity":0.5 } },
-
-    // Water fill
-    { id:"water", type:"fill", source:"ofm", "source-layer":"water",
-      paint:{ "fill-color":"#1a3848", "fill-opacity":1 } },
-
-    // Water lines — rivers, streams
-    { id:"waterway", type:"line", source:"ofm", "source-layer":"waterway",
-      paint:{ "line-color":"#1e4458", "line-width":["interpolate",["linear"],["zoom"],4,0.5,10,2,14,4], "line-opacity":0.9 } },
-
-    // === DM ROAD LAYERS (hidden by default) ===
-    { id:"dm-roads-casing", type:"line", source:"ofm", "source-layer":"transportation",
-      filter:["in","class","motorway","trunk","primary"],
-      layout:{ "visibility":"none" },
-      paint:{ "line-color":"#3a2510", "line-width":["interpolate",["linear"],["zoom"],5,2,10,5,14,10], "line-opacity":0.8 } },
-    { id:"dm-roads", type:"line", source:"ofm", "source-layer":"transportation",
-      filter:["in","class","motorway","trunk","primary"],
-      layout:{ "visibility":"none", "line-cap":"round" },
-      paint:{ "line-color":"#6a4820", "line-width":["interpolate",["linear"],["zoom"],5,1,10,3,14,6],
-              "line-dasharray":[5,3], "line-opacity":0.7 } },
-  ]
+  demotiles: {
+    name: 'MapLibre Demo Tiles',
+    testUrl: 'https://demotiles.maplibre.org/tiles/tiles.json',
+    type: 'vector',
+    source: {
+      type: 'vector',
+      url: 'https://demotiles.maplibre.org/tiles/tiles.json'
+    },
+    // Demo tiles have different layer names
+    layers: {
+      water: 'countries',   // use countries polygon for land
+      waterway: null,
+      landcover: null,
+      park: null,
+      transportation: null,
+    }
+  },
+  osm_raster: {
+    name: 'OSM Raster (fallback)',
+    testUrl: 'https://tile.openstreetmap.org/0/0/0.png',
+    type: 'raster',
+    source: {
+      type: 'raster',
+      tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+      tileSize: 256,
+      attribution: '© OpenStreetMap contributors'
+    },
+    layers: {}
+  }
 };
 
-// ── Init map ──
-const map = new maplibregl.Map({
-  container: 'map',
-  style: fantasyStyle,
-  center: [-84.2, 34.0],
-  zoom: 8,
-  minZoom: 3,
-  maxZoom: 16,
-});
+async function testTileSource(source) {
+  try {
+    const resp = await fetch(source.testUrl, {
+      method: 'GET',
+      signal: AbortSignal.timeout(8000),
+    });
+    return resp.ok;
+  } catch (e) {
+    return false;
+  }
+}
 
-map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+function setLoadingText(text) {
+  document.getElementById('loadingText').textContent = text;
+}
+
+function showTileStatus(msg, isWarning) {
+  const el = document.getElementById('tileStatus');
+  el.textContent = msg;
+  el.classList.add('visible');
+  if (isWarning) el.classList.add('warning');
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('loadingOverlay');
+  overlay.classList.add('hidden');
+  // Remove from DOM after transition
+  setTimeout(() => { overlay.style.display = 'none'; }, 700);
+}
+
+// ── Build fantasy style for a given tile source ──
+function buildFantasyStyle(tileSource) {
+  if (tileSource.type === 'raster') {
+    // Raster fallback — simple dark overlay approach
+    return {
+      version: 8,
+      sources: {
+        'raster-tiles': tileSource.source
+      },
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': '#1e1a14' } },
+        {
+          id: 'raster-layer',
+          type: 'raster',
+          source: 'raster-tiles',
+          paint: {
+            'raster-saturation': -0.8,
+            'raster-brightness-max': 0.3,
+            'raster-contrast': 0.3,
+          }
+        }
+      ]
+    };
+  }
+
+  // Vector tile style
+  const sl = tileSource.layers;
+  const layers = [
+    // Background — dark parchment
+    { id: 'background', type: 'background', paint: { 'background-color': '#1e1a14' } },
+  ];
+
+  // Land base — only if water layer exists
+  if (sl.water) {
+    layers.push({
+      id: 'water', type: 'fill', source: 'ofm', 'source-layer': sl.water,
+      paint: { 'fill-color': '#1a3848', 'fill-opacity': 1 }
+    });
+  }
+
+  // Landcover layers — only if source has landcover
+  if (sl.landcover) {
+    layers.push(
+      { id: 'landcover-grass', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'grass', 'meadow', 'farmland'],
+        paint: { 'fill-color': '#1e2e18', 'fill-opacity': 0.6 } },
+      { id: 'landcover-forest', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'wood', 'forest', 'scrub'],
+        paint: { 'fill-color': '#162814', 'fill-opacity': 0.85 } },
+      { id: 'landcover-wetland', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'wetland'],
+        paint: { 'fill-color': '#1a2e30', 'fill-opacity': 0.7 } },
+      { id: 'landcover-sand', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'sand'],
+        paint: { 'fill-color': '#c8b89a', 'fill-opacity': 0.45 } },
+      { id: 'landcover-ice', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'ice'],
+        paint: { 'fill-color': '#3a4a5a', 'fill-opacity': 0.5 } },
+    );
+  }
+
+  // Park / natural areas
+  if (sl.park) {
+    layers.push({
+      id: 'park', type: 'fill', source: 'ofm', 'source-layer': sl.park,
+      paint: { 'fill-color': '#1e3a1c', 'fill-opacity': 0.5 }
+    });
+  }
+
+  // Waterway lines
+  if (sl.waterway) {
+    layers.push({
+      id: 'waterway', type: 'line', source: 'ofm', 'source-layer': sl.waterway,
+      paint: {
+        'line-color': '#1e4458',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 10, 2, 14, 4],
+        'line-opacity': 0.9
+      }
+    });
+  }
+
+  // DM road layers (hidden by default)
+  if (sl.transportation) {
+    layers.push(
+      { id: 'dm-roads-casing', type: 'line', source: 'ofm', 'source-layer': sl.transportation,
+        filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+        layout: { 'visibility': 'none' },
+        paint: {
+          'line-color': '#3a2510',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2, 10, 5, 14, 10],
+          'line-opacity': 0.8
+        }
+      },
+      { id: 'dm-roads', type: 'line', source: 'ofm', 'source-layer': sl.transportation,
+        filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+        layout: { 'visibility': 'none', 'line-cap': 'round' },
+        paint: {
+          'line-color': '#6a4820',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1, 10, 3, 14, 6],
+          'line-dasharray': [5, 3],
+          'line-opacity': 0.7
+        }
+      },
+    );
+  }
+
+  return {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: {
+      'ofm': tileSource.source
+    },
+    layers
+  };
+}
+
+// ── Init map with fallback logic ──
+let map = null;
+let activeTileSource = null;
+
+async function initMap() {
+  setLoadingText('Testing tile sources...');
+
+  // Try sources in order of preference
+  const sourceOrder = ['openfreemap', 'demotiles', 'osm_raster'];
+
+  for (const key of sourceOrder) {
+    const source = TILE_SOURCES[key];
+    setLoadingText(`Testing ${source.name}...`);
+
+    const available = await testTileSource(source);
+    if (available) {
+      activeTileSource = source;
+      console.log(`✅ Using tile source: ${source.name}`);
+      break;
+    } else {
+      console.warn(`❌ ${source.name} unavailable, trying next...`);
+    }
+  }
+
+  if (!activeTileSource) {
+    setLoadingText('All tile sources failed. Map cannot load.');
+    showTileStatus('⚠️ All tile sources unreachable', true);
+    return;
+  }
+
+  if (activeTileSource.name !== 'OpenFreeMap') {
+    showTileStatus(`⚠️ Using fallback: ${activeTileSource.name}`, true);
+  }
+
+  setLoadingText(`Loading map from ${activeTileSource.name}...`);
+
+  const style = buildFantasyStyle(activeTileSource);
+
+  map = new maplibregl.Map({
+    container: 'map',
+    style: style,
+    center: [-84.2, 34.0],
+    zoom: 8,
+    minZoom: 3,
+    maxZoom: 16,
+  });
+
+  map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+
+  map.on('load', () => {
+    console.log('Map loaded successfully');
+    hideLoading();
+    addMarkers();
+  });
+
+  map.on('error', (e) => {
+    console.error('Map error:', e.error?.message || e);
+  });
+
+  map.on('zoomend', addMarkers);
+  map.on('zoom', () => {
+    document.getElementById('zoomEl').textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
+  });
+
+  // Safety timeout — hide loading even if map.load never fires
+  setTimeout(() => {
+    hideLoading();
+    addMarkers();
+  }, 15000);
+}
 
 // ── Markers ──
 let markers = [];
 
 function addMarkers() {
+  if (!map) return;
   markers.forEach(m => m.remove());
   markers = [];
   const zoom = map.getZoom();
 
   cities.forEach(city => {
-    const show = (city.size==="major" && zoom>=5) ||
-                 (city.size==="medium" && zoom>=7) ||
-                 (city.size==="small" && zoom>=9);
+    const show = (city.size === 'major' && zoom >= 5) ||
+                 (city.size === 'medium' && zoom >= 7) ||
+                 (city.size === 'small' && zoom >= 9);
     if (!show) return;
 
     const el = document.createElement('div');
     el.className = 'marker-wrap';
     el.innerHTML = `<div class="marker-icon-${city.size}">${city.icon}</div><div class="marker-label">${city.name}</div>`;
 
-    const popup = new maplibregl.Popup({ offset:25, maxWidth:'260px' })
+    const popup = new maplibregl.Popup({ offset: 25, maxWidth: '260px' })
       .setHTML(`<div class="popup-title">${city.icon} ${city.name}</div><div class="popup-desc">${city.desc}</div>`);
 
     markers.push(
-      new maplibregl.Marker({ element: el, anchor:'bottom' })
+      new maplibregl.Marker({ element: el, anchor: 'bottom' })
         .setLngLat([city.lng, city.lat])
         .setPopup(popup)
         .addTo(map)
@@ -207,19 +430,24 @@ function addMarkers() {
   });
 }
 
-map.on('load', addMarkers);
-map.on('zoomend', addMarkers);
-map.on('zoom', () => {
-  document.getElementById('zoomEl').textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
-});
-
 // ── Road toggle ──
 let roadsOn = false;
 function toggleRoads() {
+  if (!map) return;
+  // Only works with vector tile source that has transportation layer
+  if (!activeTileSource || !activeTileSource.layers.transportation) {
+    alert('Road layer not available with current tile source.');
+    return;
+  }
+
   roadsOn = !roadsOn;
   const v = roadsOn ? 'visible' : 'none';
-  map.setLayoutProperty('dm-roads', 'visibility', v);
-  map.setLayoutProperty('dm-roads-casing', 'visibility', v);
+  try {
+    map.setLayoutProperty('dm-roads', 'visibility', v);
+    map.setLayoutProperty('dm-roads-casing', 'visibility', v);
+  } catch (e) {
+    console.warn('Could not toggle road layers:', e.message);
+  }
   document.getElementById('roadsBtn').classList.toggle('active', roadsOn);
   document.getElementById('roadsBtn').textContent = roadsOn ? '🗺️ DM: Hide Roads' : '🗺️ DM: Show Roads';
 }
@@ -227,6 +455,9 @@ function toggleRoads() {
 document.addEventListener('keydown', e => {
   if (e.key === 'r' || e.key === 'R') toggleRoads();
 });
+
+// ── Start ──
+initMap();
 </script>
 </body>
 </html>
