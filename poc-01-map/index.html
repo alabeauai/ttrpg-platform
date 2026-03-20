@@ -1,0 +1,623 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New World — Interactive Map</title>
+
+  <!-- MapLibre GL JS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@latest/dist/maplibre-gl.js"></script>
+
+  <!-- PMTiles -->
+  <script src="https://unpkg.com/pmtiles@latest/dist/pmtiles.js"></script>
+
+  <!-- Google Fonts — fantasy feel -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=MedievalSharp&family=Cinzel:wght@400;700&family=Inter:wght@400;500&display=swap" rel="stylesheet">
+
+  <style>
+    /* ───────── Reset & Base ───────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: #0a0a0f;
+      color: #d4c8a8;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* ───────── Title Overlay ───────── */
+    .title-overlay {
+      position: absolute;
+      top: 16px;
+      left: 16px;
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    .title-overlay h1 {
+      font-family: 'Cinzel', serif;
+      font-size: clamp(18px, 3vw, 28px);
+      color: #e8dcc0;
+      text-shadow: 0 0 20px rgba(0,0,0,0.8), 0 2px 4px rgba(0,0,0,0.6);
+      letter-spacing: 2px;
+    }
+
+    .title-overlay .subtitle {
+      font-family: 'MedievalSharp', cursive;
+      font-size: clamp(11px, 1.5vw, 14px);
+      color: #9a8c6e;
+      margin-top: 2px;
+      letter-spacing: 1px;
+    }
+
+    /* ───────── Zoom Level Indicator ───────── */
+    .zoom-indicator {
+      position: absolute;
+      bottom: 32px;
+      right: 16px;
+      z-index: 10;
+      background: rgba(10, 10, 15, 0.85);
+      border: 1px solid #3a3528;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: 'Cinzel', serif;
+      font-size: 12px;
+      color: #b0a47e;
+      pointer-events: none;
+    }
+
+    /* ───────── Coordinates Display (DM tool) ───────── */
+    .coords-display {
+      position: absolute;
+      bottom: 70px;
+      right: 16px;
+      z-index: 10;
+      background: rgba(10, 10, 15, 0.9);
+      border: 1px solid #3a3528;
+      border-radius: 6px;
+      padding: 6px 12px;
+      font-family: monospace;
+      font-size: 11px;
+      color: #7a9f6a;
+      display: none;
+      pointer-events: none;
+    }
+
+    .coords-display.visible { display: block; }
+
+    /* ───────── Distance Tool Toggle ───────── */
+    .distance-toggle {
+      position: absolute;
+      top: 16px;
+      right: 16px;
+      z-index: 10;
+    }
+
+    .distance-toggle button {
+      font-family: 'Cinzel', serif;
+      font-size: 13px;
+      background: rgba(10, 10, 15, 0.85);
+      color: #d4c8a8;
+      border: 1px solid #3a3528;
+      border-radius: 6px;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .distance-toggle button:hover {
+      background: rgba(40, 36, 24, 0.9);
+      border-color: #6a5f3e;
+    }
+
+    .distance-toggle button.active {
+      background: rgba(80, 60, 20, 0.9);
+      border-color: #b09040;
+      color: #f0e0a0;
+    }
+
+    /* ───────── Distance Result Panel ───────── */
+    .distance-result {
+      position: absolute;
+      top: 60px;
+      right: 16px;
+      z-index: 10;
+      background: rgba(10, 10, 15, 0.92);
+      border: 1px solid #3a3528;
+      border-radius: 8px;
+      padding: 12px 16px;
+      max-width: 260px;
+      display: none;
+    }
+
+    .distance-result.visible { display: block; }
+
+    .distance-result h3 {
+      font-family: 'Cinzel', serif;
+      font-size: 13px;
+      color: #e8dcc0;
+      margin-bottom: 8px;
+    }
+
+    .distance-result p {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #b0a47e;
+      margin-bottom: 4px;
+    }
+
+    .distance-result .travel-time {
+      font-family: 'MedievalSharp', cursive;
+      color: #9ac47a;
+      font-size: 13px;
+    }
+
+    .distance-result .btn-clear {
+      margin-top: 8px;
+      font-family: 'Cinzel', serif;
+      font-size: 11px;
+      background: rgba(80, 30, 30, 0.6);
+      color: #d4a0a0;
+      border: 1px solid #5a2020;
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+    }
+
+    .distance-result .btn-clear:hover {
+      background: rgba(120, 40, 40, 0.7);
+    }
+
+    /* ───────── Keyboard Hint ───────── */
+    .key-hint {
+      position: absolute;
+      bottom: 8px;
+      left: 16px;
+      z-index: 10;
+      font-size: 10px;
+      color: #554f3a;
+      pointer-events: none;
+    }
+
+    /* ───────── Custom Markers ───────── */
+    .marker-major,
+    .marker-medium,
+    .marker-small {
+      cursor: pointer;
+      transition: transform 0.15s ease;
+      text-align: center;
+      line-height: 1;
+    }
+
+    .marker-major:hover,
+    .marker-medium:hover,
+    .marker-small:hover {
+      transform: scale(1.2);
+    }
+
+    .marker-major {
+      font-size: 36px;
+      filter: drop-shadow(0 0 6px rgba(200, 170, 80, 0.6));
+    }
+
+    .marker-medium {
+      font-size: 26px;
+      filter: drop-shadow(0 0 4px rgba(160, 140, 80, 0.4));
+    }
+
+    .marker-small {
+      font-size: 20px;
+      filter: drop-shadow(0 0 3px rgba(120, 110, 70, 0.3));
+    }
+
+    .marker-label {
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+      font-family: 'MedievalSharp', cursive;
+      font-size: 12px;
+      color: #e8dcc0;
+      text-shadow: 0 0 6px #000, 0 0 12px #000, 1px 1px 2px #000;
+      pointer-events: none;
+      margin-top: 2px;
+    }
+
+    .marker-medium .marker-label { font-size: 11px; }
+    .marker-small .marker-label { font-size: 10px; color: #c0b89a; }
+
+    /* ───────── Popups ───────── */
+    .maplibregl-popup-content {
+      background: rgba(15, 14, 10, 0.95) !important;
+      border: 1px solid #4a4230 !important;
+      border-radius: 8px !important;
+      color: #d4c8a8 !important;
+      padding: 16px !important;
+      max-width: 260px !important;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6) !important;
+    }
+
+    .maplibregl-popup-tip {
+      border-top-color: rgba(15, 14, 10, 0.95) !important;
+    }
+
+    .maplibregl-popup-close-button {
+      color: #9a8c6e !important;
+      font-size: 18px !important;
+      right: 6px !important;
+      top: 4px !important;
+    }
+
+    .popup-title {
+      font-family: 'Cinzel', serif;
+      font-size: 16px;
+      color: #f0e0a0;
+      margin-bottom: 2px;
+    }
+
+    .popup-real-name {
+      font-size: 11px;
+      color: #6a6248;
+      margin-bottom: 8px;
+      font-style: italic;
+    }
+
+    .popup-desc {
+      font-size: 13px;
+      line-height: 1.5;
+      color: #b0a47e;
+      margin-bottom: 12px;
+    }
+
+    .popup-btn {
+      display: inline-block;
+      font-family: 'Cinzel', serif;
+      font-size: 12px;
+      background: linear-gradient(135deg, #3a3018 0%, #2a2010 100%);
+      color: #e8dcc0;
+      border: 1px solid #5a4f30;
+      border-radius: 4px;
+      padding: 6px 14px;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+    }
+
+    .popup-btn:hover {
+      background: linear-gradient(135deg, #4a4020 0%, #3a3018 100%);
+      border-color: #8a7f50;
+    }
+
+    /* ───────── Distance Point Markers ───────── */
+    .distance-point {
+      width: 14px;
+      height: 14px;
+      background: #c0402a;
+      border: 2px solid #f0d0a0;
+      border-radius: 50%;
+      cursor: pointer;
+      box-shadow: 0 0 8px rgba(192, 64, 42, 0.6);
+    }
+
+    /* ───────── Mobile adjustments ───────── */
+    @media (max-width: 600px) {
+      .title-overlay { top: 10px; left: 10px; }
+      .title-overlay h1 { font-size: 16px; }
+      .distance-toggle { top: 10px; right: 10px; }
+      .distance-toggle button { font-size: 11px; padding: 6px 10px; }
+      .distance-result { top: 50px; right: 10px; max-width: 220px; }
+      .zoom-indicator { bottom: 24px; right: 10px; font-size: 11px; }
+      .key-hint { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <!-- Title -->
+  <div class="title-overlay">
+    <h1>New World — Interactive Map</h1>
+    <div class="subtitle">A Campaign Atlas</div>
+  </div>
+
+  <!-- Distance Tool -->
+  <div class="distance-toggle">
+    <button id="distanceBtn" onclick="toggleDistanceTool()">⚔ Distance Tool</button>
+  </div>
+
+  <!-- Distance Result -->
+  <div class="distance-result" id="distanceResult">
+    <h3>⚔ Travel Distance</h3>
+    <p id="distanceText"></p>
+    <p class="travel-time" id="travelTime"></p>
+    <button class="btn-clear" onclick="clearDistance()">Clear</button>
+  </div>
+
+  <!-- Zoom Level -->
+  <div class="zoom-indicator" id="zoomIndicator">Zoom: 4.0</div>
+
+  <!-- Coordinates (hidden by default, toggle with 'C') -->
+  <div class="coords-display" id="coordsDisplay">Lat: —, Lng: —</div>
+
+  <!-- Keyboard hint -->
+  <div class="key-hint">Press <b>C</b> to toggle coordinates · <b>D</b> to toggle distance tool</div>
+
+<script>
+// ─────────────────────────────────────────
+//  City & POI Data
+// ─────────────────────────────────────────
+const cities = [
+  // Major cities (visible zoom 4+)
+  { name: "New Haven",       realName: "Atlanta, GA",      lng: -84.388, lat: 33.749, size: "major",  icon: "🏰", description: "The largest city in the Georgia territories. A hub of trade and political intrigue." },
+  { name: "Iron Gate",       realName: "New York, NY",     lng: -74.006, lat: 40.713, size: "major",  icon: "🏰", description: "The colossal port city of the eastern seaboard. Gateway to the Old World." },
+  { name: "Windmere",        realName: "Chicago, IL",      lng: -87.630, lat: 41.878, size: "major",  icon: "🏰", description: "A sprawling trade hub on the great inland sea. Cold winds and colder politics." },
+  { name: "Solara",          realName: "Los Angeles, CA",  lng: -118.244, lat: 34.052, size: "major", icon: "🏰", description: "A sun-drenched city of dreams and illusions on the western coast." },
+  { name: "Bayreach",        realName: "Houston, TX",      lng: -95.370, lat: 29.760, size: "major",  icon: "🏰", description: "A swampy port city controlling the southern waterways. Rich in oil and secrets." },
+
+  // Medium cities (visible zoom 7+)
+  { name: "Silverbrook",     realName: "Alpharetta, GA",   lng: -84.294, lat: 34.075, size: "medium", icon: "🗼", description: "A prosperous town known for its silver mines and skilled craftsmen." },
+  { name: "Cumming",         realName: "Cumming, GA",      lng: -84.100, lat: 34.207, size: "medium", icon: "🗼", description: "A frontier town at the edge of explored territory." },
+  { name: "Brookhaven",      realName: "Brookhaven, GA",   lng: -84.326, lat: 33.865, size: "medium", icon: "🗼", description: "A quiet suburb of New Haven, known for its gardens and scholars." },
+  { name: "Buckhead",        realName: "Buckhead, GA",     lng: -84.387, lat: 33.837, size: "medium", icon: "🗼", description: "The noble district of New Haven, where the wealthy make their homes." },
+
+  // Small / POI (visible zoom 10+)
+  { name: "Helen's Hollow",  realName: "Helen, GA",        lng: -83.727, lat: 34.702, size: "small",  icon: "⛺", description: "A remote mountain village, famous for its strange folk and stranger rumors." },
+];
+
+// ─────────────────────────────────────────
+//  Map Init
+// ─────────────────────────────────────────
+const map = new maplibregl.Map({
+  container: 'map',
+  style: 'https://tiles.openfreemap.org/styles/liberty',
+  center: [-98.5, 39.5],
+  zoom: 4,
+  minZoom: 2,
+  maxZoom: 18,
+  attributionControl: true,
+});
+
+// Navigation controls
+map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+
+// ─────────────────────────────────────────
+//  Marker Management
+// ─────────────────────────────────────────
+let markers = [];
+let activePopup = null;
+
+function createMarkerElement(city) {
+  const el = document.createElement('div');
+  el.className = `marker-${city.size}`;
+  el.innerHTML = `${city.icon}<div class="marker-label">${city.name}</div>`;
+  el.title = city.name;
+  return el;
+}
+
+function createPopupHTML(city) {
+  return `
+    <div class="popup-title">${city.icon} ${city.name}</div>
+    <div class="popup-real-name">${city.realName}</div>
+    <div class="popup-desc">${city.description}</div>
+    <button class="popup-btn" onclick="alert('🗺️ Details view coming in POC-02!')">View Details</button>
+  `;
+}
+
+function addMarkers() {
+  const zoom = map.getZoom();
+
+  // Remove existing markers
+  markers.forEach(m => m.remove());
+  markers = [];
+
+  cities.forEach(city => {
+    let visible = false;
+    if (city.size === 'major' && zoom >= 3)  visible = true;
+    if (city.size === 'medium' && zoom >= 7) visible = true;
+    if (city.size === 'small' && zoom >= 10) visible = true;
+
+    if (!visible) return;
+
+    const el = createMarkerElement(city);
+    const popup = new maplibregl.Popup({
+      offset: 25,
+      closeButton: true,
+      closeOnClick: true,
+      maxWidth: '280px',
+    }).setHTML(createPopupHTML(city));
+
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([city.lng, city.lat])
+      .setPopup(popup)
+      .addTo(map);
+
+    markers.push(marker);
+  });
+}
+
+// Initial + on zoom
+addMarkers();
+map.on('zoomend', addMarkers);
+
+// ─────────────────────────────────────────
+//  Zoom Level Indicator
+// ─────────────────────────────────────────
+const zoomEl = document.getElementById('zoomIndicator');
+function updateZoom() {
+  zoomEl.textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
+}
+map.on('zoom', updateZoom);
+
+// ─────────────────────────────────────────
+//  Coordinates Display (toggle with 'C')
+// ─────────────────────────────────────────
+const coordsEl = document.getElementById('coordsDisplay');
+let coordsVisible = false;
+
+map.on('mousemove', (e) => {
+  if (coordsVisible) {
+    coordsEl.textContent = `Lat: ${e.lngLat.lat.toFixed(5)}, Lng: ${e.lngLat.lng.toFixed(5)}`;
+  }
+});
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'c' || e.key === 'C') {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    coordsVisible = !coordsVisible;
+    coordsEl.classList.toggle('visible', coordsVisible);
+  }
+  if (e.key === 'd' || e.key === 'D') {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    toggleDistanceTool();
+  }
+});
+
+// ─────────────────────────────────────────
+//  Distance Tool
+// ─────────────────────────────────────────
+let distanceMode = false;
+let distancePoints = [];
+let distanceMarkers = [];
+let distanceLine = null;
+
+function toggleDistanceTool() {
+  distanceMode = !distanceMode;
+  const btn = document.getElementById('distanceBtn');
+  btn.classList.toggle('active', distanceMode);
+
+  if (distanceMode) {
+    map.getCanvas().style.cursor = 'crosshair';
+  } else {
+    map.getCanvas().style.cursor = '';
+    clearDistance();
+  }
+}
+
+function clearDistance() {
+  distancePoints = [];
+  distanceMarkers.forEach(m => m.remove());
+  distanceMarkers = [];
+
+  if (map.getSource('distance-line')) {
+    map.removeLayer('distance-line-layer');
+    map.removeSource('distance-line');
+  }
+
+  document.getElementById('distanceResult').classList.remove('visible');
+}
+
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 3958.8; // Earth radius in miles
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+            Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+            Math.sin(dLng/2) * Math.sin(dLng/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+map.on('click', (e) => {
+  if (!distanceMode) return;
+
+  const { lng, lat } = e.lngLat;
+  distancePoints.push([lng, lat]);
+
+  // Add point marker
+  const el = document.createElement('div');
+  el.className = 'distance-point';
+  const m = new maplibregl.Marker({ element: el })
+    .setLngLat([lng, lat])
+    .addTo(map);
+  distanceMarkers.push(m);
+
+  if (distancePoints.length === 2) {
+    const [p1, p2] = distancePoints;
+    const dist = haversineDistance(p1[1], p1[0], p2[1], p2[0]);
+
+    // Walking: ~20 miles/day, Horseback: ~40 miles/day
+    const footDays = Math.ceil(dist / 20);
+    const horseDays = Math.ceil(dist / 40);
+
+    document.getElementById('distanceText').textContent = `${dist.toFixed(1)} miles as the crow flies`;
+    document.getElementById('travelTime').innerHTML =
+      `🥾 ~${footDays} day${footDays !== 1 ? 's' : ''} on foot<br>🐴 ~${horseDays} day${horseDays !== 1 ? 's' : ''} on horseback`;
+    document.getElementById('distanceResult').classList.add('visible');
+
+    // Draw line
+    if (map.getSource('distance-line')) {
+      map.removeLayer('distance-line-layer');
+      map.removeSource('distance-line');
+    }
+
+    map.addSource('distance-line', {
+      type: 'geojson',
+      data: {
+        type: 'Feature',
+        geometry: {
+          type: 'LineString',
+          coordinates: [p1, p2]
+        }
+      }
+    });
+
+    map.addLayer({
+      id: 'distance-line-layer',
+      type: 'line',
+      source: 'distance-line',
+      paint: {
+        'line-color': '#c0402a',
+        'line-width': 2,
+        'line-dasharray': [4, 4],
+      }
+    });
+
+    // Reset for next measurement
+    distancePoints = [];
+    distanceMarkers = [];
+  }
+});
+
+// ─────────────────────────────────────────
+//  Dark Fantasy Style Override
+// ─────────────────────────────────────────
+map.on('load', () => {
+  // Darken the base map for a fantasy feel
+  // We modify the background and water colors
+  try {
+    const layers = map.getStyle().layers;
+    layers.forEach(layer => {
+      // Darken backgrounds
+      if (layer.id.includes('background')) {
+        map.setPaintProperty(layer.id, 'background-color', '#1a1a24');
+      }
+      // Darken water
+      if (layer.id.includes('water') && layer.type === 'fill') {
+        map.setPaintProperty(layer.id, 'fill-color', '#0d1520');
+      }
+      // Darken land areas
+      if ((layer.id.includes('landuse') || layer.id.includes('landcover')) && layer.type === 'fill') {
+        map.setPaintProperty(layer.id, 'fill-opacity', 0.3);
+      }
+    });
+  } catch (e) {
+    console.log('Style override partial:', e.message);
+  }
+});
+</script>
+
+</body>
+</html>

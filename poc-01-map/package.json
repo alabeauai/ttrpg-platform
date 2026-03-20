@@ -1,0 +1,9 @@
+{
+  "name": "ttrpg-platform-poc-01-map",
+  "version": "0.1.0",
+  "description": "POC #1 — MapLibre GL JS interactive fantasy map with zoom-based POI reveal",
+  "private": true,
+  "scripts": {
+    "start": "npx serve . -p 3000"
+  }
+}
