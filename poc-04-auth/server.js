@@ -9,13 +9,16 @@ const mongoose = require("mongoose");
 
 // ── MongoDB User Model ──
 const userSchema = new mongoose.Schema({
-  providerId: { type: String, required: true, unique: true }, // e.g. "apple_000123..."
-  provider:   { type: String, required: true },               // google | github | apple
-  email:      { type: String, default: null },
-  name:       { type: String, default: null },
-  avatar:     { type: String, default: null },
-  createdAt:  { type: Date, default: Date.now },
+  email:      { type: String, unique: true, sparse: true },
+  role:       { type: String, enum: ['gm', 'player', 'unknown'], default: 'unknown', index: true },
+  provider:   String,
+  providerId: { type: String, unique: true, sparse: true },
+  firstName:  String,
+  lastName:   String,
+  avatarUrl:  String,
+  campaigns:  [{ campaignId: mongoose.Schema.Types.ObjectId, joinedAt: Date, status: String }],
   lastLoginAt:{ type: Date, default: Date.now },
+  createdAt:  { type: Date, default: Date.now },
 });
 const User = mongoose.models.User || mongoose.model("User", userSchema);
 
@@ -115,26 +118,28 @@ passport.deserializeUser((obj, done) => done(null, obj));
 async function upsertUser(profile) {
   if (!mongoose.connection.readyState) return profile;
   try {
+    const nameParts = (profile.name || '').split(' ');
     await User.findOneAndUpdate(
       { providerId: profile.id },
       {
-        provider: profile.provider,
-        // Only update email/name if we have them (Apple only sends on first login)
-        ...(profile.email && { email: profile.email }),
-        ...(profile.name  && { name:  profile.name  }),
-        ...(profile.avatar && { avatar: profile.avatar }),
+        provider:   profile.provider,
+        providerId: profile.id,
+        ...(profile.email  && { email:     profile.email }),
+        ...(profile.name   && { firstName: nameParts[0] || '', lastName: nameParts.slice(1).join(' ') || '' }),
+        ...(profile.avatar && { avatarUrl: profile.avatar }),
         lastLoginAt: new Date(),
-        $setOnInsert: { createdAt: new Date() }
+        $setOnInsert: { createdAt: new Date(), role: 'unknown' }
       },
-      { upsert: true, new: true }
+      { upsert: true, returnDocument: 'after' }
     );
-    // For Apple users — fetch stored email/name since Apple won't resend it
+    // Fetch stored doc (picks up role + stored email for Apple)
     const stored = await User.findOne({ providerId: profile.id });
     return {
       ...profile,
       email:  profile.email  || stored?.email  || null,
-      name:   profile.name   || stored?.name   || null,
-      avatar: profile.avatar || stored?.avatar || null,
+      name:   profile.name   || `${stored?.firstName || ''} ${stored?.lastName || ''}`.trim() || null,
+      avatar: profile.avatar || stored?.avatarUrl || null,
+      role:   stored?.role   || 'unknown',
     };
   } catch(err) {
     console.error("❌ upsertUser error:", err.message);
@@ -592,33 +597,32 @@ app.get("/dashboard", isAuthenticated, (req, res) => {
 app.get("/api/me", isAuthenticated, async (req, res) => {
   const user = req.user;
 
-  // Determine role
-  let role = "unknown";
-  if (user.email && mongoose.connection.readyState) {
-    const GameMaster = mongoose.models.GameMaster || mongoose.model("GameMaster", new mongoose.Schema({
-      email: String, firstName: String, lastName: String, avatarPath: String, lastLoginAt: Date, createdAt: Date
-    }));
-    const gm = await GameMaster.findOne({ email: user.email });
-    if (gm) {
-      role = "gm";
-      // Update last login
-      await GameMaster.updateOne({ email: user.email }, { lastLoginAt: new Date() });
-    } else {
-      // Check if player
-      const Player = mongoose.models.Player || mongoose.model("Player", new mongoose.Schema({
-        email: String, campaigns: Array
-      }));
-      const player = await Player.findOne({ email: user.email });
-      role = player ? "player" : "unknown";
+  // Refresh role from DB on each call (in case it was updated)
+  let role = user.role || "unknown";
+  if (mongoose.connection.readyState) {
+    const stored = await User.findOne({
+      $or: [
+        { providerId: user.id },
+        ...(user.email ? [{ email: user.email }] : [])
+      ]
+    });
+    if (stored) {
+      role = stored.role;
+      // Backfill providerId if missing
+      if (!stored.providerId && user.id) {
+        await User.updateOne({ _id: stored._id }, { providerId: user.id, lastLoginAt: new Date() });
+      } else {
+        await User.updateOne({ _id: stored._id }, { lastLoginAt: new Date() });
+      }
     }
   }
 
   res.json({
-    id: user.id,
-    provider: user.provider,
-    name: user.name,
-    email: user.email,
-    avatar: user.avatar,
+    id:               user.id,
+    provider:         user.provider,
+    name:             user.name,
+    email:            user.email,
+    avatar:           user.avatar,
     role,
     sessionExpiresAt: req.session.sessionExpiresAt || null,
   });
