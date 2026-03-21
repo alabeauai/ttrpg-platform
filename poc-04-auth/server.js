@@ -147,7 +147,7 @@ if (providerConfigured("apple")) {
         clientID: process.env.APPLE_CLIENT_ID,
         teamID: process.env.APPLE_TEAM_ID,
         keyID: process.env.APPLE_KEY_ID,
-        privateKeyLocation: process.env.APPLE_PRIVATE_KEY_PATH,
+        privateKeyString: require("fs").readFileSync(process.env.APPLE_PRIVATE_KEY_PATH, "utf8"),
         callbackURL: `${BASE_URL}/auth/apple/callback`,
         scope: ["name", "email"],
       },
@@ -474,10 +474,12 @@ app.get("/dashboard", isAuthenticated, (req, res) => {
   <title>Dashboard — New World</title>
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { min-height:100vh; background:#0d0d0d; color:#c9b89e;
-           font-family:'Segoe UI',system-ui,sans-serif;
-           display:flex; align-items:center; justify-content:center; }
-    .card { background:#1a1a1a; border:1px solid #3a2f24; border-radius:16px;
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap');
+    body { min-height:100vh; background:linear-gradient(135deg, #0E101C 0%, #10121E 100%); color:#c9b89e;
+           font-family:'Cinzel','Segoe UI',system-ui,sans-serif;
+           display:flex; flex-direction:column; align-items:center; justify-content:center; gap:24px; }
+    .logo { width:100px; height:100px; object-fit:contain; }
+    .card { background:linear-gradient(135deg, #0E101C 0%, #10121E 100%); border:1px solid rgba(100,160,220,0.15); border-radius:16px;
             padding:2.5rem; max-width:520px; width:90%; text-align:center; }
     h1 { color:#e8d5b7; font-size:1.6rem; margin-bottom:.25rem; }
     .subtitle { color:#8a7a6a; font-size:.85rem; margin-bottom:1.5rem; }
@@ -508,6 +510,7 @@ app.get("/dashboard", isAuthenticated, (req, res) => {
   </style>
 </head>
 <body>
+  <img src="/logo.png" alt="Cartyx" class="logo">
   <div class="card">
     <h1>⚔️ Welcome, Adventurer</h1>
     <p class="subtitle">You have entered the realm</p>
