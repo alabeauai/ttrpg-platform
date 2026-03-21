@@ -33,7 +33,8 @@
       inset: 0;
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
+      object-position: center center;
       image-rendering: pixelated;
       filter: sepia(1) hue-rotate(185deg) saturate(2.5) brightness(0.55) contrast(1.2);
     }
@@ -92,11 +93,12 @@
     }
 
     .auth-logo {
-      width: 64px;
-      height: 64px;
+      width: 140px;
+      height: 140px;
       object-fit: contain;
       margin-bottom: 8px;
       image-rendering: pixelated;
+      filter: sepia(1) hue-rotate(185deg) saturate(2.5) brightness(0.75) contrast(1.1);
     }
 
     .auth-brand {
@@ -374,8 +376,8 @@
 
 <!-- Right: Auth Panel -->
 <div class="auth-panel">
-  <img src="/logo.png" alt="Cartyx" class="auth-logo" onerror="this.style.display='none'">
-  <div class="auth-brand">CARTYX</div>
+  <img src="/cartyx-logo-pixel.jpg" alt="Cartyx" class="auth-logo">
+
 
   <!-- State: Not logged in -->
   <div id="loginView">
