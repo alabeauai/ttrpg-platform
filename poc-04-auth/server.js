@@ -926,13 +926,20 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
       align-items: center;
       justify-content: center;
       text-align: center;
-      padding: 100px 20px;
+      padding: 60px 20px;
     }
-    .empty-icon { font-size: 56px; margin-bottom: 20px; opacity: 0.6; }
+    .empty-rogue {
+      width: 200px;
+      height: 200px;
+      object-fit: contain;
+      image-rendering: pixelated;
+      filter: sepia(1) hue-rotate(185deg) saturate(2) brightness(0.8);
+      margin-bottom: 24px;
+    }
     .empty-title {
       font-family: 'Press Start 2P', monospace;
-      font-size: 12px;
-      color: #334155;
+      font-size: 11px;
+      color: #64748B;
       letter-spacing: 2px;
       margin-bottom: 14px;
       line-height: 1.8;
@@ -941,8 +948,8 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
       font-size: 14px;
       color: #475569;
       margin-bottom: 32px;
-      max-width: 320px;
-      line-height: 1.6;
+      max-width: 360px;
+      line-height: 1.7;
     }
 
     /* ── Toast ── */
@@ -1003,7 +1010,7 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
       ${cardsHtml}
     </div>` : `
     <div class="empty-state">
-      <div class="empty-icon">🗺️</div>
+      <img src="/cartyx-rogue.png" class="empty-rogue" alt="Waiting rogue">
       <div class="empty-title">NO CAMPAIGNS YET</div>
       <div class="empty-desc">${isGm
         ? "Create your first campaign to get started."
