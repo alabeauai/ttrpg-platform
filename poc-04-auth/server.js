@@ -516,55 +516,476 @@ async function revokeToken(user) {
 // Protected Routes
 // ---------------------------------------------------------------------------
 
+const mockCampaigns = [
+  {
+    id: "1",
+    name: "The Shadow Realm",
+    description: "A dark journey through the cursed lands of Aethelgard where ancient evils stir.",
+    status: "active",
+    image: null,
+    nextSession: { day: "Tuesday", time: "7:00 PM" },
+    players: { current: 3, max: 5 },
+    inviteCode: "SHAD-7X4K"
+  },
+  {
+    id: "2",
+    name: "Cathedral of Ash",
+    description: "Investigate the mysterious fires that have consumed the holy city of Ember.",
+    status: "paused",
+    image: null,
+    nextSession: null,
+    players: { current: 4, max: 4 },
+    inviteCode: "CATH-9M2P"
+  }
+];
+
+function renderCampaignCard(campaign, isGm) {
+  const statusColor = campaign.status === "active" ? "#2563EB" : "#475569";
+  const statusBg = campaign.status === "active" ? "rgba(37,99,235,0.15)" : "rgba(71,85,105,0.2)";
+  const statusLabel = campaign.status === "active" ? "ACTIVE" : "PAUSED";
+  const playerPct = Math.round((campaign.players.current / campaign.players.max) * 100);
+  const bannerGradient = campaign.status === "active"
+    ? "linear-gradient(135deg, #0F1729 0%, #0D1B3E 50%, #0A1628 100%)"
+    : "linear-gradient(135deg, #0F1117 0%, #141820 50%, #0C0E14 100%)";
+
+  return `
+    <div class="campaign-card">
+      <div class="card-banner" style="background:${bannerGradient};">
+        <div class="banner-shimmer"></div>
+        <div class="banner-icon">${campaign.status === "active" ? "⚔️" : "🏔️"}</div>
+        <div class="status-badge" style="background:${statusBg};color:${statusColor};border:1px solid ${statusColor}40;">
+          ${statusLabel}
+        </div>
+      </div>
+      <div class="card-body">
+        <div class="card-name">${escapeHtml(campaign.name)}</div>
+        <div class="card-desc">${escapeHtml(campaign.description)}</div>
+        <div class="card-meta">
+          ${campaign.nextSession ? `
+          <div class="meta-row">
+            <span class="meta-icon">🗓</span>
+            <span class="meta-label">Next Session</span>
+            <span class="meta-value">${escapeHtml(campaign.nextSession.day)} · ${escapeHtml(campaign.nextSession.time)}</span>
+          </div>` : `
+          <div class="meta-row">
+            <span class="meta-icon">⏸</span>
+            <span class="meta-label">Next Session</span>
+            <span class="meta-value" style="color:#475569;">Not scheduled</span>
+          </div>`}
+          <div class="meta-row" style="margin-top:10px;">
+            <span class="meta-icon">👥</span>
+            <span class="meta-label">Players</span>
+            <span class="meta-value">${campaign.players.current} / ${campaign.players.max}</span>
+          </div>
+          <div class="player-bar-track">
+            <div class="player-bar-fill" style="width:${playerPct}%;background:${campaign.status === "active" ? "linear-gradient(90deg,#1D4ED8,#3B82F6)" : "linear-gradient(90deg,#334155,#475569)"};"></div>
+          </div>
+        </div>
+        ${isGm ? `
+        <button class="btn-invite" onclick="copyInvite('${escapeHtml(campaign.inviteCode)}', this)">
+          <span>📋</span> Copy Invite Code
+        </button>` : ""}
+        <a href="/campaigns/${escapeHtml(campaign.id)}" class="btn-enter">Enter Campaign</a>
+      </div>
+    </div>`;
+}
+
 app.get("/campaigns", isAuthenticated, (req, res) => {
   const user = req.user;
+  const isGm = user.role === "gm";
+  const hasCampaigns = mockCampaigns.length > 0;
+
+  const cardsHtml = hasCampaigns
+    ? mockCampaigns.map(c => renderCampaignCard(c, isGm)).join("")
+    : "";
+
   res.send(`<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>My Campaigns — Cartyx</title>
-  <link rel="stylesheet" href="/cartyx.css">
-  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
-    body { font-family: 'Inter', sans-serif; align-items: flex-start; justify-content: flex-start; padding: 0; }
-    .topbar { width:100%; background:rgba(0,0,0,0.4); border-bottom:1px solid rgba(255,255,255,0.06); padding:16px 32px; display:flex; align-items:center; justify-content:space-between; }
-    .topbar-brand { font-family:'Press Start 2P',monospace; font-size:11px; color:#fff; letter-spacing:3px; }
-    .topbar-user { display:flex; align-items:center; gap:12px; }
-    .topbar-avatar { width:36px; height:36px; border-radius:50%; border:2px solid rgba(100,181,246,0.3); }
-    .topbar-name { font-size:13px; color:#94A3B8; }
-    .main { width:100%; max-width:1100px; margin:0 auto; padding:40px 32px; }
-    .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:32px; }
-    .page-title { font-family:'Press Start 2P',monospace; font-size:14px; color:#fff; letter-spacing:2px; }
-    .btn-create { padding:12px 24px; border-radius:10px; border:none; background:linear-gradient(135deg,#1D4ED8,#2563EB); color:#fff; font-family:'Inter',sans-serif; font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:8px; transition:all 0.2s; }
-    .btn-create:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(37,99,235,0.4); }
-    .empty-state { text-align:center; padding:80px 20px; color:#475569; }
-    .empty-icon { font-size:48px; margin-bottom:16px; }
-    .empty-title { font-family:'Press Start 2P',monospace; font-size:12px; color:#64748B; margin-bottom:12px; line-height:1.6; }
-    .empty-desc { font-size:14px; color:#475569; margin-bottom:32px; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      background: #080A12;
+      color: #E2E8F0;
+      font-family: 'Inter', sans-serif;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Topbar ── */
+    .topbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      width: 100%;
+      background: rgba(8,10,18,0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      padding: 0 32px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .topbar-brand {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      color: #fff;
+      letter-spacing: 3px;
+      text-decoration: none;
+    }
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .topbar-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid rgba(59,130,246,0.4);
+      object-fit: cover;
+    }
+    .topbar-avatar-placeholder {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      border: 2px solid rgba(59,130,246,0.4);
+      background: rgba(37,99,235,0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+    }
+    .topbar-name {
+      font-size: 13px;
+      color: #94A3B8;
+      font-weight: 500;
+    }
+    .topbar-divider {
+      width: 1px;
+      height: 20px;
+      background: rgba(255,255,255,0.1);
+    }
+    .topbar-signout {
+      font-size: 12px;
+      color: #475569;
+      text-decoration: none;
+      transition: color 0.2s;
+      font-weight: 500;
+    }
+    .topbar-signout:hover { color: #94A3B8; }
+
+    /* ── Main ── */
+    .main {
+      flex: 1;
+      width: 100%;
+      max-width: 1160px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
+
+    /* ── Page header ── */
+    .page-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 40px;
+    }
+    .page-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 15px;
+      color: #fff;
+      letter-spacing: 2px;
+    }
+    .btn-create {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 22px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 60%, #3B82F6 100%);
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 2px 12px rgba(37,99,235,0.3);
+    }
+    .btn-create:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 24px rgba(37,99,235,0.5);
+    }
+
+    /* ── Campaign grid ── */
+    .campaigns-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    /* ── Campaign card ── */
+    .campaign-card {
+      background: #0D1117;
+      border: 1px solid rgba(255,255,255,0.07);
+      border-radius: 16px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.2s, transform 0.2s, box-shadow 0.2s;
+    }
+    .campaign-card:hover {
+      border-color: rgba(59,130,246,0.25);
+      transform: translateY(-3px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.4), 0 0 0 1px rgba(59,130,246,0.1);
+    }
+
+    /* Banner */
+    .card-banner {
+      position: relative;
+      height: 160px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .banner-shimmer {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 30% 40%, rgba(37,99,235,0.08) 0%, transparent 60%),
+                  radial-gradient(ellipse at 70% 60%, rgba(99,102,241,0.05) 0%, transparent 60%);
+      pointer-events: none;
+    }
+    .banner-icon {
+      font-size: 48px;
+      opacity: 0.35;
+      filter: drop-shadow(0 0 20px rgba(59,130,246,0.3));
+    }
+    .status-badge {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      font-family: 'Press Start 2P', monospace;
+      font-size: 7px;
+      letter-spacing: 1px;
+      padding: 5px 10px;
+      border-radius: 6px;
+    }
+
+    /* Card body */
+    .card-body {
+      padding: 20px 20px 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      flex: 1;
+    }
+    .card-name {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 11px;
+      color: #F1F5F9;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .card-desc {
+      font-size: 13px;
+      color: #64748B;
+      line-height: 1.6;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 18px;
+    }
+    .card-meta {
+      margin-bottom: 16px;
+    }
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .meta-icon { font-size: 13px; }
+    .meta-label {
+      font-size: 11px;
+      color: #475569;
+      font-weight: 500;
+      flex: 1;
+    }
+    .meta-value {
+      font-size: 12px;
+      color: #94A3B8;
+      font-weight: 500;
+    }
+    .player-bar-track {
+      margin-top: 7px;
+      height: 4px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .player-bar-fill {
+      height: 100%;
+      border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+
+    /* Buttons */
+    .btn-invite {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      width: 100%;
+      padding: 9px 16px;
+      margin-bottom: 10px;
+      border-radius: 10px;
+      border: 1px solid rgba(59,130,246,0.2);
+      background: rgba(37,99,235,0.08);
+      color: #60A5FA;
+      font-family: 'Inter', sans-serif;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-invite:hover {
+      background: rgba(37,99,235,0.15);
+      border-color: rgba(59,130,246,0.4);
+    }
+    .btn-enter {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      padding: 12px 16px;
+      border-radius: 12px;
+      border: none;
+      background: linear-gradient(135deg, #1D4ED8 0%, #2563EB 60%, #3B82F6 100%);
+      color: #fff;
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all 0.2s;
+      box-shadow: 0 2px 10px rgba(37,99,235,0.25);
+      margin-top: auto;
+    }
+    .btn-enter:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(37,99,235,0.45);
+    }
+
+    /* ── Empty state ── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 100px 20px;
+    }
+    .empty-icon { font-size: 56px; margin-bottom: 20px; opacity: 0.6; }
+    .empty-title {
+      font-family: 'Press Start 2P', monospace;
+      font-size: 12px;
+      color: #334155;
+      letter-spacing: 2px;
+      margin-bottom: 14px;
+      line-height: 1.8;
+    }
+    .empty-desc {
+      font-size: 14px;
+      color: #475569;
+      margin-bottom: 32px;
+      max-width: 320px;
+      line-height: 1.6;
+    }
+
+    /* ── Toast ── */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(80px);
+      background: #1E293B;
+      border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 10px;
+      padding: 12px 20px;
+      font-size: 13px;
+      color: #93C5FD;
+      font-weight: 500;
+      transition: transform 0.3s cubic-bezier(0.34,1.56,0.64,1);
+      z-index: 999;
+      white-space: nowrap;
+    }
+    .toast.show { transform: translateX(-50%) translateY(0); }
+
+    @media (max-width: 640px) {
+      .main { padding: 32px 16px 60px; }
+      .topbar { padding: 0 16px; }
+      .page-title { font-size: 11px; }
+      .campaigns-grid { grid-template-columns: 1fr; }
+    }
   </style>
 </head>
 <body>
-  <div class="topbar">
-    <div class="topbar-brand">CARTYX</div>
-    <div class="topbar-user">
-      ${user.avatar ? `<img src="${user.avatar}" class="topbar-avatar" alt="">` : ''}
-      <span class="topbar-name">${escapeHtml(user.name || '')}</span>
-      <a href="/logout" style="font-size:12px;color:#475569;text-decoration:none;margin-left:8px;">Sign Out</a>
+  <nav class="topbar">
+    <a href="/campaigns" class="topbar-brand">CARTYX</a>
+    <div class="topbar-right">
+      ${user.avatar
+        ? `<img src="${escapeHtml(user.avatar)}" class="topbar-avatar" alt="">`
+        : `<div class="topbar-avatar-placeholder">🧙</div>`}
+      <span class="topbar-name">${escapeHtml(user.name || "")}</span>
+      <div class="topbar-divider"></div>
+      <a href="/logout" class="topbar-signout">Sign Out</a>
     </div>
-  </div>
-  <div class="main">
+  </nav>
+
+  <main class="main">
     <div class="page-header">
-      <div class="page-title">MY CAMPAIGNS</div>
-      ${user.role === 'gm' ? `<a href="/campaigns/new" class="btn-create">⚔️ Create Campaign</a>` : ''}
+      <h1 class="page-title">MY CAMPAIGNS</h1>
+      ${isGm ? `<a href="/campaigns/new" class="btn-create">⚔️ Create Campaign</a>` : ""}
     </div>
+
+    ${hasCampaigns ? `
+    <div class="campaigns-grid">
+      ${cardsHtml}
+    </div>` : `
     <div class="empty-state">
       <div class="empty-icon">🗺️</div>
       <div class="empty-title">NO CAMPAIGNS YET</div>
-      <div class="empty-desc">${user.role === 'gm' ? 'Create your first campaign to get started.' : 'Ask your GM for an invite code to join a campaign.'}</div>
-      ${user.role === 'gm' ? `<a href="/campaigns/new" class="btn-create">⚔️ Create Your First Campaign</a>` : ''}
-    </div>
-  </div>
-</body></html>`);
+      <div class="empty-desc">${isGm
+        ? "Create your first campaign to get started."
+        : "Ask your GM for an invite code to join a campaign."}</div>
+      ${isGm ? `<a href="/campaigns/new" class="btn-create">⚔️ Create Your First Campaign</a>` : ""}
+    </div>`}
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    function copyInvite(code, btn) {
+      navigator.clipboard.writeText(code).then(() => {
+        const toast = document.getElementById('toast');
+        toast.textContent = '✓ Invite code copied: ' + code;
+        toast.classList.add('show');
+        setTimeout(() => toast.classList.remove('show'), 2400);
+      });
+    }
+  </script>
+</body>
+</html>`);
 });
 
 // Keep /dashboard as alias
