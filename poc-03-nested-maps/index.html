@@ -444,8 +444,14 @@ async function initMap() {
   map.on('error', (e) => { console.error('Map error:', e.error?.message || e); });
 
   map.on('zoom', () => {
-    document.getElementById('zoomEl').textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
+    const zoom = map.getZoom();
+    document.getElementById('zoomEl').textContent = `Zoom: ${zoom.toFixed(1)}`;
     updateTerritoryMarkerVisibility();
+    updateDistrictMarkerVisibility();
+    // Auto-exit city view if zoomed out too far
+    if (currentView === 'city' && zoom < 10) {
+      exitCity();
+    }
   });
 
   // Safety timeout
@@ -473,9 +479,11 @@ function createTerritoryMarkers() {
     const isVisible = city.discovered || dmMode;
     el.innerHTML = `<div class="marker-icon-${city.size}">${city.icon}</div><div class="marker-label">${city.name}</div>`;
 
+    el.style.display = 'none'; // start hidden, visibility managed by zoom
+
     const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
       .setLngLat([city.lng, city.lat])
-      .addTo(map);
+      .addTo(map); // always on map, visibility via CSS
 
     // Click handler for popup
     el.addEventListener('click', (e) => {
@@ -531,14 +539,15 @@ function createDistrictMarkers() {
     const el = document.createElement('div');
     el.className = 'marker-wrap';
     el.innerHTML = `<div class="marker-icon-district">${dist.icon}</div><div class="marker-label-district">${dist.name}</div>`;
+    el.style.display = 'none'; // hidden by default
 
     const popup = new maplibregl.Popup({ offset: 25, maxWidth: '260px' })
       .setHTML(`<div class="popup-title">${dist.icon} ${dist.name}</div><div class="popup-desc">${dist.desc}</div>`);
 
     const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
       .setLngLat([dist.lng, dist.lat])
-      .setPopup(popup);
-    // Don't add to map yet — addTo is called when entering city view
+      .setPopup(popup)
+      .addTo(map); // Always on map, just hidden via CSS
 
     districtMarkers.push({ marker, district: dist, element: el });
   });
@@ -548,14 +557,11 @@ function createDistrictMarkers() {
 function showTerritoryView() {
   currentView = 'territory';
 
-  // Show territory markers
-  territoryMarkers.forEach(m => {
-    m.marker.addTo(map);
-    updateTerritoryMarkerVisibility(m);
-  });
+  // Show territory markers (zoom-based visibility handled by updateTerritoryMarkerVisibility)
+  updateTerritoryMarkerVisibility();
 
-  // Hide district markers
-  districtMarkers.forEach(m => m.marker.remove());
+  // Hide ALL district markers
+  districtMarkers.forEach(m => { m.element.style.display = 'none'; });
 
   // Update breadcrumb
   updateBreadcrumb();
@@ -568,11 +574,11 @@ function showTerritoryView() {
 function showCityView() {
   currentView = 'city';
 
-  // Hide territory markers
-  territoryMarkers.forEach(m => m.marker.remove());
+  // Hide ALL territory markers
+  territoryMarkers.forEach(m => { m.element.style.display = 'none'; });
 
   // Show district markers
-  districtMarkers.forEach(m => m.marker.addTo(map));
+  districtMarkers.forEach(m => { m.element.style.display = 'block'; });
 
   // Update breadcrumb
   updateBreadcrumb();
@@ -582,6 +588,14 @@ function showCityView() {
   sub.textContent = 'City Districts';
   sub.classList.add('visible');
   document.getElementById('backBtn').classList.add('visible');
+}
+
+function updateDistrictMarkerVisibility() {
+  if (currentView !== 'city') {
+    districtMarkers.forEach(m => { m.element.style.display = 'none'; });
+    return;
+  }
+  districtMarkers.forEach(m => { m.element.style.display = 'block'; });
 }
 
 function updateTerritoryMarkerVisibility() {
