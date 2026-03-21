@@ -22,6 +22,28 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.models.User || mongoose.model("User", userSchema);
 
+// ── MongoDB Campaign Model ──
+const campaignSchema = new mongoose.Schema({
+  gameMasterId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  name: { type: String, required: true },
+  description: String,
+  imagePath: String,
+  schedule: {
+    frequency: String,
+    dayOfWeek: String,
+    time: String,
+    timezone: String
+  },
+  callUrl: String,
+  dndBeyondUrl: String,
+  maxPlayers: { type: Number, default: 4 },
+  inviteCode: { type: String, unique: true },
+  status: { type: String, default: "active" },
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+const Campaign = mongoose.models.Campaign || mongoose.model("Campaign", campaignSchema);
+
 // ── Connect to MongoDB ──
 if (process.env.MONGODB_URI) {
   mongoose.connect(process.env.MONGODB_URI)
@@ -909,12 +931,13 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
       padding: 60px 20px;
     }
     .empty-rogue {
-      width: 200px;
-      height: 200px;
+      width: 380px;
+      height: auto;
       object-fit: contain;
       image-rendering: pixelated;
-      filter: sepia(1) hue-rotate(185deg) saturate(2) brightness(0.8);
+      filter: sepia(1) hue-rotate(185deg) saturate(2) brightness(0.75);
       margin-bottom: 24px;
+      border-radius: 12px;
     }
     .empty-title {
       font-family: 'Press Start 2P', monospace;
