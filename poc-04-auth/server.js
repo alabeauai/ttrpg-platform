@@ -147,7 +147,7 @@ if (providerConfigured("apple")) {
         clientID: process.env.APPLE_CLIENT_ID,
         teamID: process.env.APPLE_TEAM_ID,
         keyID: process.env.APPLE_KEY_ID,
-        privateKeyPath: process.env.APPLE_PRIVATE_KEY_PATH,
+        privateKeyLocation: process.env.APPLE_PRIVATE_KEY_PATH,
         callbackURL: `${BASE_URL}/auth/apple/callback`,
         scope: ["name", "email"],
       },
@@ -281,7 +281,22 @@ app.post(
   "/auth/apple/callback",
   (req, res, next) => {
     if (!providerConfigured("apple")) return res.redirect("/");
-    passport.authenticate("apple", { failureRedirect: "/?reason=auth_failed" })(req, res, next);
+    passport.authenticate("apple", { failureRedirect: "/?reason=auth_failed" }, (err, user, info) => {
+      if (err) {
+        console.error("🍎 Apple auth error:", JSON.stringify(err, null, 2));
+        console.error("🍎 Apple auth info:", JSON.stringify(info, null, 2));
+        return res.redirect("/?reason=auth_failed");
+      }
+      if (!user) {
+        console.error("🍎 Apple no user, info:", JSON.stringify(info, null, 2));
+        return res.redirect("/?reason=auth_failed");
+      }
+      req.logIn(user, (loginErr) => {
+        if (loginErr) return next(loginErr);
+        applyRememberMe(req);
+        res.redirect("/dashboard");
+      });
+    })(req, res, next);
   },
   (req, res) => {
     applyRememberMe(req);
