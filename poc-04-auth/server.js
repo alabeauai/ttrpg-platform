@@ -581,7 +581,7 @@ app.get("/dashboard", isAuthenticated, (req, res) => {
       ${expiresIn !== null ? `⏳ Time remaining: <strong>${expiresIn} minutes</strong>` : ""}
     </div>
     <div class="actions">
-      ${user.refreshToken ? `<a href="/auth/refresh" class="btn btn-refresh">🔄 Refresh Token</a>` : ""}
+
       <a href="/logout" class="btn btn-logout">🚪 Sign Out</a>
     </div>
   </div>
