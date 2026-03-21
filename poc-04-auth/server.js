@@ -298,7 +298,7 @@ app.get(
   },
   (req, res) => {
     applyRememberMe(req);
-    res.redirect("/dashboard");
+    res.redirect("/campaigns");
   }
 );
 
@@ -320,7 +320,7 @@ app.get(
   },
   (req, res) => {
     applyRememberMe(req);
-    res.redirect("/dashboard");
+    res.redirect("/campaigns");
   }
 );
 
@@ -352,13 +352,13 @@ app.post(
       req.logIn(user, (loginErr) => {
         if (loginErr) return next(loginErr);
         applyRememberMe(req);
-        res.redirect("/dashboard");
+        res.redirect("/campaigns");
       });
     })(req, res, next);
   },
   (req, res) => {
     applyRememberMe(req);
-    res.redirect("/dashboard");
+    res.redirect("/campaigns");
   }
 );
 
@@ -371,7 +371,7 @@ app.get(
   },
   (req, res) => {
     applyRememberMe(req);
-    res.redirect("/dashboard");
+    res.redirect("/campaigns");
   }
 );
 
@@ -516,6 +516,58 @@ async function revokeToken(user) {
 // Protected Routes
 // ---------------------------------------------------------------------------
 
+app.get("/campaigns", isAuthenticated, (req, res) => {
+  const user = req.user;
+  res.send(`<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>My Campaigns — Cartyx</title>
+  <link rel="stylesheet" href="/cartyx.css">
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Inter', sans-serif; align-items: flex-start; justify-content: flex-start; padding: 0; }
+    .topbar { width:100%; background:rgba(0,0,0,0.4); border-bottom:1px solid rgba(255,255,255,0.06); padding:16px 32px; display:flex; align-items:center; justify-content:space-between; }
+    .topbar-brand { font-family:'Press Start 2P',monospace; font-size:11px; color:#fff; letter-spacing:3px; }
+    .topbar-user { display:flex; align-items:center; gap:12px; }
+    .topbar-avatar { width:36px; height:36px; border-radius:50%; border:2px solid rgba(100,181,246,0.3); }
+    .topbar-name { font-size:13px; color:#94A3B8; }
+    .main { width:100%; max-width:1100px; margin:0 auto; padding:40px 32px; }
+    .page-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:32px; }
+    .page-title { font-family:'Press Start 2P',monospace; font-size:14px; color:#fff; letter-spacing:2px; }
+    .btn-create { padding:12px 24px; border-radius:10px; border:none; background:linear-gradient(135deg,#1D4ED8,#2563EB); color:#fff; font-family:'Inter',sans-serif; font-size:14px; font-weight:600; cursor:pointer; text-decoration:none; display:inline-flex; align-items:center; gap:8px; transition:all 0.2s; }
+    .btn-create:hover { transform:translateY(-1px); box-shadow:0 4px 20px rgba(37,99,235,0.4); }
+    .empty-state { text-align:center; padding:80px 20px; color:#475569; }
+    .empty-icon { font-size:48px; margin-bottom:16px; }
+    .empty-title { font-family:'Press Start 2P',monospace; font-size:12px; color:#64748B; margin-bottom:12px; line-height:1.6; }
+    .empty-desc { font-size:14px; color:#475569; margin-bottom:32px; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-brand">CARTYX</div>
+    <div class="topbar-user">
+      ${user.avatar ? `<img src="${user.avatar}" class="topbar-avatar" alt="">` : ''}
+      <span class="topbar-name">${escapeHtml(user.name || '')}</span>
+      <a href="/logout" style="font-size:12px;color:#475569;text-decoration:none;margin-left:8px;">Sign Out</a>
+    </div>
+  </div>
+  <div class="main">
+    <div class="page-header">
+      <div class="page-title">MY CAMPAIGNS</div>
+      ${user.role === 'gm' ? `<a href="/campaigns/new" class="btn-create">⚔️ Create Campaign</a>` : ''}
+    </div>
+    <div class="empty-state">
+      <div class="empty-icon">🗺️</div>
+      <div class="empty-title">NO CAMPAIGNS YET</div>
+      <div class="empty-desc">${user.role === 'gm' ? 'Create your first campaign to get started.' : 'Ask your GM for an invite code to join a campaign.'}</div>
+      ${user.role === 'gm' ? `<a href="/campaigns/new" class="btn-create">⚔️ Create Your First Campaign</a>` : ''}
+    </div>
+  </div>
+</body></html>`);
+});
+
+// Keep /dashboard as alias
 app.get("/dashboard", isAuthenticated, (req, res) => {
   const user = req.user;
   const expiresAt = req.session.sessionExpiresAt
