@@ -516,28 +516,7 @@ async function revokeToken(user) {
 // Protected Routes
 // ---------------------------------------------------------------------------
 
-const mockCampaigns = [
-  {
-    id: "1",
-    name: "The Shadow Realm",
-    description: "A dark journey through the cursed lands of Aethelgard where ancient evils stir.",
-    status: "active",
-    image: null,
-    nextSession: { day: "Tuesday", time: "7:00 PM" },
-    players: { current: 3, max: 5 },
-    inviteCode: "SHAD-7X4K"
-  },
-  {
-    id: "2",
-    name: "Cathedral of Ash",
-    description: "Investigate the mysterious fires that have consumed the holy city of Ember.",
-    status: "paused",
-    image: null,
-    nextSession: null,
-    players: { current: 4, max: 4 },
-    inviteCode: "CATH-9M2P"
-  }
-];
+// Mock campaigns removed — will be replaced with real DB queries
 
 function renderCampaignCard(campaign, isGm) {
   const statusColor = campaign.status === "active" ? "#2563EB" : "#475569";
@@ -593,10 +572,11 @@ function renderCampaignCard(campaign, isGm) {
 app.get("/campaigns", isAuthenticated, (req, res) => {
   const user = req.user;
   const isGm = user.role === "gm";
-  const hasCampaigns = mockCampaigns.length > 0;
+  const campaigns = []; // TODO: fetch from MongoDB
+  const hasCampaigns = campaigns.length > 0;
 
   const cardsHtml = hasCampaigns
-    ? mockCampaigns.map(c => renderCampaignCard(c, isGm)).join("")
+    ? campaigns.map(c => renderCampaignCard(c, isGm)).join("")
     : "";
 
   res.send(`<!DOCTYPE html>
