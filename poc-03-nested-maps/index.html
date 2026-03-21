@@ -1,0 +1,722 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>New World — Nested Maps</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@3.2.0/dist/pmtiles.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&display=swap" rel="stylesheet">
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #1a1510; color: #d4c8a8; overflow: hidden; height: 100vh; width: 100vw; font-family: 'Cinzel', serif; }
+    #map { position: absolute; inset: 0; width: 100%; height: 100%; }
+
+    /* ── Breadcrumb ── */
+    .breadcrumb {
+      position: absolute; top: 16px; left: 16px; z-index: 10;
+      display: flex; align-items: center; gap: 0;
+    }
+    .breadcrumb-item {
+      font-family: 'Cinzel', serif; font-size: clamp(14px, 2.5vw, 20px);
+      color: #e8d5b0; text-shadow: 0 0 20px rgba(0,0,0,0.9), 0 2px 4px rgba(0,0,0,0.7);
+      letter-spacing: 1.5px; cursor: default; transition: color 0.2s;
+    }
+    .breadcrumb-item.clickable { cursor: pointer; }
+    .breadcrumb-item.clickable:hover { color: #f0c860; }
+    .breadcrumb-sep {
+      font-size: clamp(12px, 2vw, 16px); color: #7a6f50; margin: 0 8px;
+      text-shadow: 0 0 10px rgba(0,0,0,0.8);
+    }
+
+    /* ── Subtitle (city view) ── */
+    .subtitle {
+      position: absolute; top: 46px; left: 16px; z-index: 10; pointer-events: none;
+      font-family: 'Cinzel', serif; font-size: clamp(11px, 1.8vw, 14px);
+      color: #9a8c6e; letter-spacing: 1px;
+      text-shadow: 0 0 10px rgba(0,0,0,0.8);
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .subtitle.visible { opacity: 1; }
+
+    /* ── Controls (top right) ── */
+    .controls {
+      position: absolute; top: 16px; right: 16px; z-index: 10;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .controls button {
+      font-family: 'Cinzel', serif; font-size: 13px;
+      background: rgba(26,21,16,0.92); color: #d4c8a8;
+      border: 1px solid #3a3528; border-radius: 6px;
+      padding: 8px 14px; cursor: pointer; transition: all 0.2s;
+      white-space: nowrap;
+    }
+    .controls button:hover { background: rgba(50,40,28,0.95); border-color: #6a5f3e; }
+    .controls button.active { background: rgba(80,60,20,0.9); border-color: #b09040; color: #f0e0a0; }
+
+    /* ── Back button (city view) ── */
+    .back-btn {
+      position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 10;
+      font-family: 'Cinzel', serif; font-size: 14px;
+      background: rgba(26,21,16,0.94); color: #d4c8a8;
+      border: 1px solid #4a4230; border-radius: 8px;
+      padding: 10px 24px; cursor: pointer; transition: all 0.25s;
+      display: none; letter-spacing: 1px;
+    }
+    .back-btn:hover { background: rgba(50,40,28,0.95); border-color: #b09040; color: #f0e0a0; transform: translateX(-50%) scale(1.05); }
+    .back-btn.visible { display: block; }
+
+    /* ── Zoom indicator ── */
+    .zoom-indicator {
+      position: absolute; bottom: 40px; right: 16px; z-index: 10;
+      background: rgba(26,21,16,0.9); border: 1px solid #3a3528;
+      border-radius: 6px; padding: 6px 12px;
+      font-family: 'Cinzel', serif; font-size: 12px; color: #b0a47e;
+      pointer-events: none;
+    }
+
+    /* ── Tile status ── */
+    .tile-status {
+      position: absolute; bottom: 70px; right: 16px; z-index: 10;
+      background: rgba(26,21,16,0.9); border: 1px solid #3a3528;
+      border-radius: 6px; padding: 6px 12px;
+      font-family: 'Cinzel', serif; font-size: 11px; color: #7a9f6a;
+      pointer-events: none; display: none;
+    }
+    .tile-status.warning { color: #dea06a; border-color: #5a4020; }
+    .tile-status.visible { display: block; }
+
+    /* ── Loading overlay ── */
+    .loading-overlay {
+      position: absolute; inset: 0; z-index: 100;
+      background: #1a1510;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      transition: opacity 0.6s ease;
+    }
+    .loading-overlay.hidden { opacity: 0; pointer-events: none; }
+    .loading-spinner {
+      width: 40px; height: 40px;
+      border: 3px solid #3a3528; border-top-color: #b09040;
+      border-radius: 50%; animation: spin 1s linear infinite;
+    }
+    .loading-text {
+      font-family: 'Cinzel', serif; font-size: 14px; color: #b0a47e;
+      margin-top: 16px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Transition overlay ── */
+    .transition-overlay {
+      position: absolute; inset: 0; z-index: 90;
+      background: rgba(10,8,5,0.95);
+      display: flex; align-items: center; justify-content: center;
+      opacity: 0; pointer-events: none;
+      transition: opacity 0.4s ease;
+    }
+    .transition-overlay.active { opacity: 1; pointer-events: all; }
+    .transition-text {
+      font-family: 'Cinzel', serif; font-size: clamp(18px, 4vw, 28px);
+      color: #e8d5b0; letter-spacing: 3px;
+      text-shadow: 0 0 30px rgba(200,170,80,0.4);
+    }
+
+    /* ── Markers ── */
+    .marker-wrap { cursor: pointer; text-align: center; line-height: 1; transition: transform 0.15s; }
+    .marker-wrap:hover { transform: scale(1.2); }
+    .marker-icon-major { font-size: 32px; filter: drop-shadow(0 0 6px rgba(200,170,80,0.7)); }
+    .marker-icon-medium { font-size: 22px; filter: drop-shadow(0 0 4px rgba(160,140,80,0.5)); }
+    .marker-icon-small { font-size: 16px; filter: drop-shadow(0 0 3px rgba(120,110,70,0.4)); }
+    .marker-icon-district { font-size: 28px; filter: drop-shadow(0 0 5px rgba(180,160,100,0.6)); }
+    .marker-label {
+      position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      white-space: nowrap; font-family: 'Cinzel', serif; font-size: 11px;
+      color: #e8d5b0; text-shadow: 0 0 6px #000, 0 0 12px #000;
+      pointer-events: none; margin-top: 2px;
+    }
+    .marker-label-district {
+      position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      white-space: nowrap; font-family: 'Cinzel', serif; font-size: 12px;
+      color: #f0e0a0; text-shadow: 0 0 8px #000, 0 0 16px #000;
+      pointer-events: none; margin-top: 4px;
+    }
+
+    /* ── Popups ── */
+    .maplibregl-popup-content {
+      background: rgba(26,21,16,0.96) !important;
+      border: 1px solid #4a4230 !important; border-radius: 8px !important;
+      color: #d4c8a8 !important; padding: 16px !important;
+      max-width: 280px !important; box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+    }
+    .maplibregl-popup-close-button { color: #9a8c6e !important; font-size: 18px !important; }
+    .popup-title { font-family: 'Cinzel', serif; font-size: 15px; color: #f0e0a0; margin-bottom: 4px; }
+    .popup-tier { font-size: 11px; color: #7a9f6a; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+    .popup-desc { font-size: 13px; line-height: 1.5; color: #b0a47e; margin-bottom: 10px; }
+    .popup-explore {
+      display: inline-block; font-family: 'Cinzel', serif; font-size: 13px;
+      background: rgba(80,60,20,0.6); color: #f0e0a0;
+      border: 1px solid #b09040; border-radius: 6px;
+      padding: 6px 14px; cursor: pointer; transition: all 0.2s;
+      text-decoration: none;
+    }
+    .popup-explore:hover { background: rgba(120,90,30,0.8); border-color: #d0b050; }
+    .popup-locked {
+      display: inline-block; font-family: 'Cinzel', serif; font-size: 12px;
+      color: #6a5f4e; letter-spacing: 0.5px;
+    }
+
+    /* ── DM mode indicator ── */
+    .dm-badge {
+      position: absolute; top: 50px; right: 16px; z-index: 10;
+      font-family: 'Cinzel', serif; font-size: 11px; color: #b09040;
+      background: rgba(26,21,16,0.9); border: 1px solid #5a4a20;
+      border-radius: 4px; padding: 3px 8px;
+      opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    }
+    .dm-badge.visible { opacity: 1; }
+  </style>
+</head>
+<body>
+
+<div id="map"></div>
+
+<!-- Loading overlay -->
+<div class="loading-overlay" id="loadingOverlay">
+  <div class="loading-spinner"></div>
+  <div class="loading-text" id="loadingText">Loading map tiles...</div>
+</div>
+
+<!-- Transition overlay -->
+<div class="transition-overlay" id="transitionOverlay">
+  <div class="transition-text" id="transitionText"></div>
+</div>
+
+<!-- Breadcrumb -->
+<div class="breadcrumb" id="breadcrumb">
+  <span class="breadcrumb-item" id="breadcrumb-root">⚔️ New World</span>
+</div>
+
+<!-- Subtitle for city view -->
+<div class="subtitle" id="subtitle"></div>
+
+<!-- Controls -->
+<div class="controls">
+  <button id="roadsBtn" onclick="toggleRoads()">🗺️ DM: Roads</button>
+  <button id="dmBtn" onclick="toggleDmMode()">🔮 DM Mode</button>
+</div>
+
+<!-- DM badge -->
+<div class="dm-badge" id="dmBadge">DM MODE</div>
+
+<!-- Back button -->
+<button class="back-btn" id="backBtn" onclick="exitCity()">⬅ Back to Territory Map</button>
+
+<!-- Zoom indicator -->
+<div class="zoom-indicator" id="zoomEl">Zoom: 8.0</div>
+<div class="tile-status" id="tileStatus"></div>
+
+<script>
+// ── PMTiles protocol ──
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol('pmtiles', protocol.tile);
+
+// ── State ──
+let currentView = 'territory'; // 'territory' | 'city'
+let dmMode = false;
+let roadsOn = false;
+
+// ── Territory cities ──
+const cities = [
+  {
+    name: "New Haven", lng: -84.388, lat: 33.749, size: "major", icon: "🏰",
+    desc: "The largest city in the Georgia territories. A hub of trade, magic, and political intrigue.",
+    tier: "Major City", hasDetail: true, discovered: true
+  },
+  {
+    name: "Silverbrook", lng: -84.294, lat: 34.075, size: "medium", icon: "🗼",
+    desc: "A prosperous town known for its silver mines and skilled craftsmen.",
+    tier: "Town", hasDetail: false, discovered: false
+  },
+  {
+    name: "Cumming", lng: -84.140, lat: 34.207, size: "medium", icon: "🗼",
+    desc: "A frontier town at the edge of explored territory.",
+    tier: "Town", hasDetail: false, discovered: false
+  },
+  {
+    name: "Helen's Hollow", lng: -83.727, lat: 34.702, size: "small", icon: "⛺",
+    desc: "A remote mountain village, famous for its strange folk and stranger rumors.",
+    tier: "Village", hasDetail: false, discovered: false
+  },
+];
+
+// ── City districts (New Haven / Atlanta) ──
+const districts = [
+  { name: "The Merchant Quarter", lng: -84.362, lat: 33.840, icon: "🏪", desc: "Wealthy traders and guild halls line the marble streets. The scent of exotic spices fills the air." },
+  { name: "The Scholar's Row", lng: -84.385, lat: 33.786, icon: "📚", desc: "Towers of learning and arcane libraries. The mages' quarter hums with quiet power." },
+  { name: "The Iron District", lng: -84.390, lat: 33.753, icon: "⚒️", desc: "Smoke rises from the forges day and night. The beating heart of New Haven's industry." },
+  { name: "The Harbor Gate", lng: -84.428, lat: 33.641, icon: "⚓", desc: "The southern gate where caravans arrive and depart. Rumors travel faster than horses here." },
+  { name: "The Garden Ward", lng: -84.371, lat: 33.740, icon: "🌿", desc: "Ancient trees and healing gardens. The druids tend to the city's green heart." },
+  { name: "The Noble Heights", lng: -84.336, lat: 33.787, icon: "🏰", desc: "Grand estates and walled manors. The old families watch over the city from their towers." },
+];
+
+// ── Tile source detection ──
+const TILE_SOURCES = {
+  openfreemap: {
+    name: 'OpenFreeMap',
+    testUrl: 'https://tiles.openfreemap.org/planet',
+    type: 'vector',
+    source: { type: 'vector', url: 'https://tiles.openfreemap.org/planet' },
+    layers: { water: 'water', waterway: 'waterway', landcover: 'landcover', park: 'park', transportation: 'transportation' }
+  },
+  demotiles: {
+    name: 'MapLibre Demo Tiles',
+    testUrl: 'https://demotiles.maplibre.org/tiles/tiles.json',
+    type: 'vector',
+    source: { type: 'vector', url: 'https://demotiles.maplibre.org/tiles/tiles.json' },
+    layers: { water: 'countries', waterway: null, landcover: null, park: null, transportation: null }
+  },
+  osm_raster: {
+    name: 'OSM Raster (fallback)',
+    testUrl: 'https://tile.openstreetmap.org/0/0/0.png',
+    type: 'raster',
+    source: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '© OpenStreetMap contributors' },
+    layers: {}
+  }
+};
+
+async function testTileSource(source) {
+  try {
+    const resp = await fetch(source.testUrl, { method: 'GET', signal: AbortSignal.timeout(8000) });
+    return resp.ok;
+  } catch (e) { return false; }
+}
+
+function setLoadingText(text) { document.getElementById('loadingText').textContent = text; }
+
+function showTileStatus(msg, isWarning) {
+  const el = document.getElementById('tileStatus');
+  el.textContent = msg;
+  el.classList.add('visible');
+  if (isWarning) el.classList.add('warning');
+}
+
+function hideLoading() {
+  const overlay = document.getElementById('loadingOverlay');
+  overlay.classList.add('hidden');
+  setTimeout(() => { overlay.style.display = 'none'; }, 700);
+}
+
+// ── Fantasy style builder ──
+function buildFantasyStyle(tileSource) {
+  if (tileSource.type === 'raster') {
+    return {
+      version: 8,
+      sources: { 'raster-tiles': tileSource.source },
+      layers: [
+        { id: 'background', type: 'background', paint: { 'background-color': '#1e1a14' } },
+        { id: 'raster-layer', type: 'raster', source: 'raster-tiles',
+          paint: { 'raster-saturation': -0.8, 'raster-brightness-max': 0.3, 'raster-contrast': 0.3 } }
+      ]
+    };
+  }
+
+  const sl = tileSource.layers;
+  const layers = [
+    { id: 'background', type: 'background', paint: { 'background-color': '#1e1a14' } },
+  ];
+
+  if (sl.water) {
+    layers.push({ id: 'water', type: 'fill', source: 'ofm', 'source-layer': sl.water,
+      paint: { 'fill-color': '#1a3848', 'fill-opacity': 1 } });
+  }
+
+  if (sl.landcover) {
+    layers.push(
+      { id: 'landcover-grass', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'grass', 'meadow', 'farmland'],
+        paint: { 'fill-color': '#1e2e18', 'fill-opacity': 0.6 } },
+      { id: 'landcover-forest', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'wood', 'forest', 'scrub'],
+        paint: { 'fill-color': '#162814', 'fill-opacity': 0.85 } },
+      { id: 'landcover-wetland', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'wetland'],
+        paint: { 'fill-color': '#1a2e30', 'fill-opacity': 0.7 } },
+      { id: 'landcover-sand', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'sand'],
+        paint: { 'fill-color': '#c8b89a', 'fill-opacity': 0.45 } },
+      { id: 'landcover-ice', type: 'fill', source: 'ofm', 'source-layer': sl.landcover,
+        filter: ['in', 'class', 'ice'],
+        paint: { 'fill-color': '#3a4a5a', 'fill-opacity': 0.5 } },
+    );
+  }
+
+  if (sl.park) {
+    layers.push({ id: 'park', type: 'fill', source: 'ofm', 'source-layer': sl.park,
+      paint: { 'fill-color': '#1e3a1c', 'fill-opacity': 0.5 } });
+  }
+
+  if (sl.waterway) {
+    layers.push({ id: 'waterway', type: 'line', source: 'ofm', 'source-layer': sl.waterway,
+      paint: { 'line-color': '#1e4458',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 4, 0.5, 10, 2, 14, 4],
+        'line-opacity': 0.9 } });
+  }
+
+  if (sl.transportation) {
+    layers.push(
+      { id: 'dm-roads-casing', type: 'line', source: 'ofm', 'source-layer': sl.transportation,
+        filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+        layout: { 'visibility': 'none' },
+        paint: { 'line-color': '#3a2510',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 5, 2, 10, 5, 14, 10],
+          'line-opacity': 0.8 } },
+      { id: 'dm-roads', type: 'line', source: 'ofm', 'source-layer': sl.transportation,
+        filter: ['in', 'class', 'motorway', 'trunk', 'primary'],
+        layout: { 'visibility': 'none', 'line-cap': 'round' },
+        paint: { 'line-color': '#6a4820',
+          'line-width': ['interpolate', ['linear'], ['zoom'], 5, 1, 10, 3, 14, 6],
+          'line-dasharray': [5, 3], 'line-opacity': 0.7 } },
+    );
+  }
+
+  return {
+    version: 8,
+    glyphs: 'https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf',
+    sources: { 'ofm': tileSource.source },
+    layers
+  };
+}
+
+// ── Map instance ──
+let map = null;
+let activeTileSource = null;
+let territoryMarkers = [];
+let districtMarkers = [];
+
+async function initMap() {
+  setLoadingText('Testing tile sources...');
+
+  const sourceOrder = ['openfreemap', 'demotiles', 'osm_raster'];
+  for (const key of sourceOrder) {
+    const source = TILE_SOURCES[key];
+    setLoadingText(`Testing ${source.name}...`);
+    if (await testTileSource(source)) {
+      activeTileSource = source;
+      console.log(`✅ Using tile source: ${source.name}`);
+      break;
+    } else {
+      console.warn(`❌ ${source.name} unavailable`);
+    }
+  }
+
+  if (!activeTileSource) {
+    setLoadingText('All tile sources failed.');
+    showTileStatus('⚠️ All tile sources unreachable', true);
+    return;
+  }
+
+  if (activeTileSource.name !== 'OpenFreeMap') {
+    showTileStatus(`⚠️ Using fallback: ${activeTileSource.name}`, true);
+  }
+
+  setLoadingText(`Loading map from ${activeTileSource.name}...`);
+
+  map = new maplibregl.Map({
+    container: 'map',
+    style: buildFantasyStyle(activeTileSource),
+    center: [-84.2, 34.0],
+    zoom: 8,
+    minZoom: 3,
+    maxZoom: 18,
+  });
+
+  map.addControl(new maplibregl.NavigationControl(), 'bottom-left');
+
+  map.on('load', () => {
+    console.log('Map loaded');
+    hideLoading();
+    createTerritoryMarkers();
+    createDistrictMarkers();
+    showTerritoryView();
+  });
+
+  map.on('error', (e) => { console.error('Map error:', e.error?.message || e); });
+
+  map.on('zoom', () => {
+    document.getElementById('zoomEl').textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
+  });
+
+  // Safety timeout
+  setTimeout(() => {
+    hideLoading();
+    if (territoryMarkers.length === 0) {
+      createTerritoryMarkers();
+      createDistrictMarkers();
+      showTerritoryView();
+    }
+  }, 15000);
+}
+
+// ── Marker creation ──
+function createTerritoryMarkers() {
+  territoryMarkers.forEach(m => m.marker.remove());
+  territoryMarkers = [];
+
+  cities.forEach((city, idx) => {
+    const el = document.createElement('div');
+    el.className = 'marker-wrap';
+    el.dataset.size = city.size;
+
+    // In DM mode or discovered → show normally; otherwise hidden (unless DM mode)
+    const isVisible = city.discovered || dmMode;
+    el.innerHTML = `<div class="marker-icon-${city.size}">${city.icon}</div><div class="marker-label">${city.name}</div>`;
+
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([city.lng, city.lat])
+      .addTo(map);
+
+    // Click handler for popup
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      openCityPopup(city, marker);
+    });
+
+    territoryMarkers.push({ marker, city, element: el });
+  });
+}
+
+function openCityPopup(city, marker) {
+  // Close any existing popups
+  territoryMarkers.forEach(m => {
+    const popup = m.marker.getPopup();
+    if (popup && popup.isOpen()) popup.remove();
+  });
+
+  let html = '';
+
+  if (!city.discovered && !dmMode) {
+    // Undiscovered city
+    html = `
+      <div class="popup-title">❓ Unknown Location</div>
+      <div class="popup-desc">🔒 This location has not yet been discovered. The DM knows what lies here.</div>
+    `;
+  } else {
+    // Discovered (or DM mode)
+    html = `
+      <div class="popup-title">${city.icon} ${city.name}</div>
+      <div class="popup-tier">📜 ${city.tier}</div>
+      <div class="popup-desc">${city.desc}</div>
+    `;
+
+    if (city.hasDetail) {
+      html += `<div style="margin-top:8px"><span class="popup-explore" onclick="enterCity('${city.name}')">🗺️ Explore ${city.name}</span></div>`;
+    } else {
+      html += `<div class="popup-locked" style="margin-top:6px">🔒 No detailed map available</div>`;
+    }
+  }
+
+  const popup = new maplibregl.Popup({ offset: 25, maxWidth: '280px', closeOnClick: true })
+    .setLngLat([city.lng, city.lat])
+    .setHTML(html)
+    .addTo(map);
+}
+
+function createDistrictMarkers() {
+  districtMarkers.forEach(m => m.marker.remove());
+  districtMarkers = [];
+
+  districts.forEach((dist) => {
+    const el = document.createElement('div');
+    el.className = 'marker-wrap';
+    el.innerHTML = `<div class="marker-icon-district">${dist.icon}</div><div class="marker-label-district">${dist.name}</div>`;
+
+    const popup = new maplibregl.Popup({ offset: 25, maxWidth: '260px' })
+      .setHTML(`<div class="popup-title">${dist.icon} ${dist.name}</div><div class="popup-desc">${dist.desc}</div>`);
+
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([dist.lng, dist.lat])
+      .setPopup(popup);
+    // Don't add to map yet — addTo is called when entering city view
+
+    districtMarkers.push({ marker, district: dist, element: el });
+  });
+}
+
+// ── View management ──
+function showTerritoryView() {
+  currentView = 'territory';
+
+  // Show territory markers
+  territoryMarkers.forEach(m => {
+    m.marker.addTo(map);
+    updateTerritoryMarkerVisibility(m);
+  });
+
+  // Hide district markers
+  districtMarkers.forEach(m => m.marker.remove());
+
+  // Update breadcrumb
+  updateBreadcrumb();
+
+  // Hide subtitle & back button
+  document.getElementById('subtitle').classList.remove('visible');
+  document.getElementById('backBtn').classList.remove('visible');
+}
+
+function showCityView() {
+  currentView = 'city';
+
+  // Hide territory markers
+  territoryMarkers.forEach(m => m.marker.remove());
+
+  // Show district markers
+  districtMarkers.forEach(m => m.marker.addTo(map));
+
+  // Update breadcrumb
+  updateBreadcrumb();
+
+  // Show subtitle & back button
+  const sub = document.getElementById('subtitle');
+  sub.textContent = 'City Districts';
+  sub.classList.add('visible');
+  document.getElementById('backBtn').classList.add('visible');
+}
+
+function updateTerritoryMarkerVisibility(m) {
+  const city = m.city;
+  // If not discovered and not DM mode, hide
+  if (!city.discovered && !dmMode) {
+    m.element.style.display = 'none';
+    return;
+  }
+  m.element.style.display = 'block';
+}
+
+function updateBreadcrumb() {
+  const bc = document.getElementById('breadcrumb');
+  if (currentView === 'territory') {
+    bc.innerHTML = '<span class="breadcrumb-item">⚔️ New World — Territory Map</span>';
+  } else {
+    bc.innerHTML = `
+      <span class="breadcrumb-item clickable" onclick="exitCity()">⚔️ New World</span>
+      <span class="breadcrumb-sep">›</span>
+      <span class="breadcrumb-item">🏰 New Haven</span>
+    `;
+  }
+}
+
+// ── Transitions ──
+function showTransition(text, callback) {
+  const overlay = document.getElementById('transitionOverlay');
+  const textEl = document.getElementById('transitionText');
+  textEl.textContent = text;
+  overlay.classList.add('active');
+
+  setTimeout(() => {
+    callback();
+    setTimeout(() => {
+      overlay.classList.remove('active');
+    }, 400);
+  }, 500);
+}
+
+function enterCity(cityName) {
+  if (currentView === 'city') return;
+
+  // Close any open popups
+  map.fire('closeAllPopups');
+  document.querySelectorAll('.maplibregl-popup').forEach(p => p.remove());
+
+  const city = cities.find(c => c.name === cityName);
+  if (!city) return;
+
+  showTransition(`Entering ${cityName}...`, () => {
+    // Fly to city level
+    map.flyTo({
+      center: [city.lng, city.lat],
+      zoom: 13,
+      duration: 1500,
+      essential: true
+    });
+
+    // After fly completes, swap markers
+    map.once('moveend', () => {
+      showCityView();
+    });
+
+    // Fallback in case moveend doesn't fire
+    setTimeout(() => {
+      if (currentView !== 'city') showCityView();
+    }, 2000);
+  });
+}
+
+function exitCity() {
+  if (currentView === 'territory') return;
+
+  showTransition('Leaving New Haven...', () => {
+    // Fly back to territory view
+    map.flyTo({
+      center: [-84.2, 34.0],
+      zoom: 8,
+      duration: 1500,
+      essential: true
+    });
+
+    map.once('moveend', () => {
+      showTerritoryView();
+    });
+
+    setTimeout(() => {
+      if (currentView !== 'territory') showTerritoryView();
+    }, 2000);
+  });
+}
+
+// ── DM Mode toggle ──
+function toggleDmMode() {
+  dmMode = !dmMode;
+  const btn = document.getElementById('dmBtn');
+  const badge = document.getElementById('dmBadge');
+  btn.classList.toggle('active', dmMode);
+  btn.textContent = dmMode ? '🔮 DM Mode ON' : '🔮 DM Mode';
+  badge.classList.toggle('visible', dmMode);
+
+  if (currentView === 'territory') {
+    territoryMarkers.forEach(m => updateTerritoryMarkerVisibility(m));
+  }
+}
+
+// ── Road toggle ──
+function toggleRoads() {
+  if (!map || !activeTileSource || !activeTileSource.layers.transportation) {
+    alert('Road layer not available with current tile source.');
+    return;
+  }
+
+  roadsOn = !roadsOn;
+  const v = roadsOn ? 'visible' : 'none';
+  try {
+    map.setLayoutProperty('dm-roads', 'visibility', v);
+    map.setLayoutProperty('dm-roads-casing', 'visibility', v);
+  } catch (e) {
+    console.warn('Could not toggle road layers:', e.message);
+  }
+  const btn = document.getElementById('roadsBtn');
+  btn.classList.toggle('active', roadsOn);
+  btn.textContent = roadsOn ? '🗺️ Roads ON' : '🗺️ DM: Roads';
+}
+
+// ── Keyboard shortcuts ──
+document.addEventListener('keydown', e => {
+  if (e.key === 'r' || e.key === 'R') toggleRoads();
+  if (e.key === 'd' || e.key === 'D') toggleDmMode();
+  if (e.key === 'Escape' && currentView === 'city') exitCity();
+});
+
+// ── Start ──
+initMap();
+</script>
+</body>
+</html>
