@@ -668,6 +668,39 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
       color: #94A3B8;
       font-weight: 500;
     }
+    .user-menu { position: relative; }
+    .user-menu-trigger {
+      display: flex; align-items: center; gap: 10px;
+      cursor: pointer; padding: 6px 10px; border-radius: 10px;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+      user-select: none;
+    }
+    .user-menu-trigger:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.08); }
+    .user-menu-arrow { color: #475569; font-size: 10px; transition: transform 0.2s; }
+    .user-menu-trigger.open .user-menu-arrow { transform: rotate(180deg); }
+    .user-menu-dropdown {
+      display: none;
+      position: absolute; top: calc(100% + 8px); right: 0;
+      background: #0F1117;
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px;
+      padding: 6px;
+      min-width: 160px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+      z-index: 100;
+    }
+    .user-menu-dropdown.open { display: block; }
+    .user-menu-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 10px 12px; border-radius: 8px;
+      color: #94A3B8; font-size: 13px; font-family: 'Inter', sans-serif;
+      text-decoration: none; cursor: pointer;
+      transition: all 0.15s;
+    }
+    .user-menu-item:hover { background: rgba(255,255,255,0.05); color: #E2E8F0; }
+    .user-menu-item.danger { color: #F87171; }
+    .user-menu-item.danger:hover { background: rgba(248,113,113,0.08); }
     .topbar-divider {
       width: 1px;
       height: 20px;
@@ -946,9 +979,16 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
       ${user.avatar
         ? `<img src="${escapeHtml(user.avatar)}" class="topbar-avatar" alt="">`
         : `<div class="topbar-avatar-placeholder">🧙</div>`}
-      <span class="topbar-name">${escapeHtml(user.name || "")}</span>
-      <div class="topbar-divider"></div>
-      <a href="/logout" class="topbar-signout">Sign Out</a>
+      <div class="user-menu">
+        <div class="user-menu-trigger" onclick="toggleMenu(this)">
+          <span class="topbar-name">${escapeHtml(user.name || "")}</span>
+          <span class="user-menu-arrow">▼</span>
+        </div>
+        <div class="user-menu-dropdown">
+          <a href="/settings" class="user-menu-item">⚙️ Settings</a>
+          <a href="/logout" class="user-menu-item danger">🚪 Sign Out</a>
+        </div>
+      </div>
     </div>
   </nav>
 
@@ -983,6 +1023,17 @@ app.get("/campaigns", isAuthenticated, (req, res) => {
         setTimeout(() => toast.classList.remove('show'), 2400);
       });
     }
+    function toggleMenu(trigger) {
+      trigger.classList.toggle('open');
+      trigger.nextElementSibling.classList.toggle('open');
+    }
+    // Close menu when clicking outside
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.user-menu')) {
+        document.querySelectorAll('.user-menu-trigger.open').forEach(t => t.classList.remove('open'));
+        document.querySelectorAll('.user-menu-dropdown.open').forEach(d => d.classList.remove('open'));
+      }
+    });
   </script>
 </body>
 </html>`);
