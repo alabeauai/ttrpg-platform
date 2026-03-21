@@ -1,0 +1,19 @@
+{
+  "name": "poc-04-auth",
+  "version": "1.0.0",
+  "description": "POC 4: Social authentication with Google, GitHub, and Apple via Passport.js",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-session": "^1.18.1",
+    "passport": "^0.7.0",
+    "passport-apple": "^2.0.2",
+    "passport-github2": "^0.1.12",
+    "passport-google-oauth20": "^2.0.0"
+  }
+}
