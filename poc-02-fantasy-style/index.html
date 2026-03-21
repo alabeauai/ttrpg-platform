@@ -380,53 +380,66 @@ async function initMap() {
   map.on('load', () => {
     console.log('Map loaded successfully');
     hideLoading();
-    addMarkers();
+    addMarkers(); // create once
   });
 
   map.on('error', (e) => {
     console.error('Map error:', e.error?.message || e);
   });
 
-  map.on('zoomend', addMarkers);
+  // Update visibility on zoom — don't recreate markers, just show/hide
   map.on('zoom', () => {
     document.getElementById('zoomEl').textContent = `Zoom: ${map.getZoom().toFixed(1)}`;
+    updateMarkerVisibility();
   });
 
-  // Safety timeout — hide loading even if map.load never fires
+  // Safety timeout
   setTimeout(() => {
     hideLoading();
-    addMarkers();
+    if (markers.length === 0) addMarkers();
   }, 15000);
 }
 
-// ── Markers ──
+// ── Markers — created ONCE, visibility toggled via CSS ──
 let markers = [];
 
 function addMarkers() {
   if (!map) return;
+  // Clear any existing markers first
   markers.forEach(m => m.remove());
   markers = [];
-  const zoom = map.getZoom();
 
+  // Create ALL markers upfront — fixed to their coordinates permanently
   cities.forEach(city => {
-    const show = (city.size === 'major' && zoom >= 5) ||
-                 (city.size === 'medium' && zoom >= 7) ||
-                 (city.size === 'small' && zoom >= 9);
-    if (!show) return;
-
     const el = document.createElement('div');
     el.className = 'marker-wrap';
+    el.dataset.size = city.size;
     el.innerHTML = `<div class="marker-icon-${city.size}">${city.icon}</div><div class="marker-label">${city.name}</div>`;
 
     const popup = new maplibregl.Popup({ offset: 25, maxWidth: '260px' })
       .setHTML(`<div class="popup-title">${city.icon} ${city.name}</div><div class="popup-desc">${city.desc}</div>`);
 
-    markers.push(
-      new maplibregl.Marker({ element: el, anchor: 'bottom' })
-        .setLngLat([city.lng, city.lat])
-        .setPopup(popup)
-        .addTo(map)
-    );
+    const marker = new maplibregl.Marker({ element: el, anchor: 'bottom' })
+      .setLngLat([city.lng, city.lat])
+      .setPopup(popup)
+      .addTo(map);
+
+    markers.push(marker);
+  });
+
+  // Set initial visibility
+  updateMarkerVisibility();
+}
+
+function updateMarkerVisibility() {
+  if (!map) return;
+  const zoom = map.getZoom();
+  markers.forEach((marker, i) => {
+    const city = cities[i];
+    const show = (city.size === 'major' && zoom >= 5) ||
+                 (city.size === 'medium' && zoom >= 7) ||
+                 (city.size === 'small' && zoom >= 9);
+    marker.getElement().style.display = show ? 'block' : 'none';
   });
 }
 
