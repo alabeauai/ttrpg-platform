@@ -5,6 +5,28 @@ const session = require("express-session");
 const passport = require("passport");
 const path = require("path");
 const fs = require("fs");
+const mongoose = require("mongoose");
+
+// ── MongoDB User Model ──
+const userSchema = new mongoose.Schema({
+  providerId: { type: String, required: true, unique: true }, // e.g. "apple_000123..."
+  provider:   { type: String, required: true },               // google | github | apple
+  email:      { type: String, default: null },
+  name:       { type: String, default: null },
+  avatar:     { type: String, default: null },
+  createdAt:  { type: Date, default: Date.now },
+  lastLoginAt:{ type: Date, default: Date.now },
+});
+const User = mongoose.models.User || mongoose.model("User", userSchema);
+
+// ── Connect to MongoDB ──
+if (process.env.MONGODB_URI) {
+  mongoose.connect(process.env.MONGODB_URI)
+    .then(() => console.log("✅ MongoDB connected"))
+    .catch(err => console.error("❌ MongoDB error:", err.message));
+} else {
+  console.warn("⚠️  MONGODB_URI not set — users will not be persisted");
+}
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -89,6 +111,37 @@ app.use(passport.session());
 passport.serializeUser((user, done) => done(null, user));
 passport.deserializeUser((obj, done) => done(null, obj));
 
+// ── Persist user to MongoDB ──
+async function upsertUser(profile) {
+  if (!mongoose.connection.readyState) return profile;
+  try {
+    await User.findOneAndUpdate(
+      { providerId: profile.id },
+      {
+        provider: profile.provider,
+        // Only update email/name if we have them (Apple only sends on first login)
+        ...(profile.email && { email: profile.email }),
+        ...(profile.name  && { name:  profile.name  }),
+        ...(profile.avatar && { avatar: profile.avatar }),
+        lastLoginAt: new Date(),
+        $setOnInsert: { createdAt: new Date() }
+      },
+      { upsert: true, new: true }
+    );
+    // For Apple users — fetch stored email/name since Apple won't resend it
+    const stored = await User.findOne({ providerId: profile.id });
+    return {
+      ...profile,
+      email:  profile.email  || stored?.email  || null,
+      name:   profile.name   || stored?.name   || null,
+      avatar: profile.avatar || stored?.avatar || null,
+    };
+  } catch(err) {
+    console.error("❌ upsertUser error:", err.message);
+    return profile;
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Passport Strategies
 // ---------------------------------------------------------------------------
@@ -107,7 +160,7 @@ if (providerConfigured("google")) {
         prompt: "consent",
       },
       (accessToken, refreshToken, profile, done) => {
-        done(null, normalizeProfile("google", profile, accessToken, refreshToken));
+        upsertUser(normalizeProfile("google", profile, accessToken, refreshToken)).then(u => done(null, u)).catch(() => done(null, normalizeProfile("google", profile, accessToken, refreshToken)));
       }
     )
   );
@@ -129,7 +182,7 @@ if (providerConfigured("github")) {
       },
       (accessToken, refreshToken, profile, done) => {
         // GitHub doesn't provide refresh tokens
-        done(null, normalizeProfile("github", profile, accessToken, null));
+        upsertUser(normalizeProfile("github", profile, accessToken, null)).then(u => done(null, u)).catch(() => done(null, normalizeProfile("github", profile, accessToken, null)));
       }
     )
   );
@@ -165,7 +218,7 @@ if (providerConfigured("apple")) {
           refreshToken: refreshToken || null,
           tokenIssuedAt: Date.now(),
         };
-        done(null, user);
+        upsertUser(user).then(u => done(null, u)).catch(() => done(null, user));
       }
     )
   );
