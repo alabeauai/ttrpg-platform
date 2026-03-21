@@ -589,14 +589,37 @@ app.get("/dashboard", isAuthenticated, (req, res) => {
 </html>`);
 });
 
-app.get("/api/me", isAuthenticated, (req, res) => {
+app.get("/api/me", isAuthenticated, async (req, res) => {
   const user = req.user;
+
+  // Determine role
+  let role = "unknown";
+  if (user.email && mongoose.connection.readyState) {
+    const GameMaster = mongoose.models.GameMaster || mongoose.model("GameMaster", new mongoose.Schema({
+      email: String, firstName: String, lastName: String, avatarPath: String, lastLoginAt: Date, createdAt: Date
+    }));
+    const gm = await GameMaster.findOne({ email: user.email });
+    if (gm) {
+      role = "gm";
+      // Update last login
+      await GameMaster.updateOne({ email: user.email }, { lastLoginAt: new Date() });
+    } else {
+      // Check if player
+      const Player = mongoose.models.Player || mongoose.model("Player", new mongoose.Schema({
+        email: String, campaigns: Array
+      }));
+      const player = await Player.findOne({ email: user.email });
+      role = player ? "player" : "unknown";
+    }
+  }
+
   res.json({
     id: user.id,
     provider: user.provider,
     name: user.name,
     email: user.email,
     avatar: user.avatar,
+    role,
     sessionExpiresAt: req.session.sessionExpiresAt || null,
   });
 });
